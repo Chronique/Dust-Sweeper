@@ -4,16 +4,25 @@ import { useEffect, useState } from "react";
 import { useAccount, useWriteContract, useWalletClient } from "wagmi";
 import { getSmartAccountClient, publicClient } from "~/lib/smart-account";
 import { alchemy } from "~/lib/alchemy";
-import { formatEther, erc20Abi, type Address } from "viem";
-import { Copy, Wallet, CheckCircle, Circle, NavArrowLeft, NavArrowRight, ArrowUp, Sparks } from "iconoir-react";
+import { formatEther, formatUnits, erc20Abi, type Address } from "viem";
+import { Copy, Wallet, CheckCircle, Circle, NavArrowLeft, NavArrowRight, ArrowUp, Sparks, Rocket, Check } from "iconoir-react";
 
-// Token yang di-exclude (Tidak dianggap dust)
-const IGNORED_TOKENS = [
-  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC Base
-  "0x4200000000000000000000000000000000000006", // WETH Base
-];
-
+// AERODROME CONSTANTS
+const ROUTER_ADDRESS = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43";
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
+const routerAbi = [
+  {
+    inputs: [
+      { internalType: "uint256", name: "amountIn", type: "uint256" },
+      { internalType: "address[]", name: "path", type: "address[]" }
+    ],
+    name: "getAmountsOut",
+    outputs: [{ internalType: "uint256[]", name: "amounts", type: "uint256[]" }],
+    stateMutability: "view",
+    type: "function"
+  }
+] as const;
 
 interface TokenData {
   contractAddress: string;
@@ -31,49 +40,71 @@ export const DustDepositView = () => {
   const { writeContractAsync } = useWriteContract();
 
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
-  const [vaultEthBalance, setVaultEthBalance] = useState<string>("0");
-  
+  const [isDeployed, setIsDeployed] = useState(false);
+  const [activating, setActivating] = useState(false);
+
   const [tokens, setTokens] = useState<TokenData[]>([]);
-  const [loading, setLoading] = useState(false); // Loading scan wallet
-  const [calculatingValue, setCalculatingValue] = useState(false); // Loading hitung harga
-  const [potentialValue, setPotentialValue] = useState(0); // Total Value $$
+  const [loading, setLoading] = useState(false);
+  const [calculatingValue, setCalculatingValue] = useState(false);
+  const [potentialValue, setPotentialValue] = useState(0); 
   
   const [depositStatus, setDepositStatus] = useState<string | null>(null);
-  
   const [page, setPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
   const [selectedTokens, setSelectedTokens] = useState<Set<string>>(new Set());
 
-  // 1. INIT VAULT INFO
-  useEffect(() => {
-    const initVault = async () => {
+  // 1. INIT VAULT & CHECK DEPLOYMENT
+  const checkVaultStatus = async () => {
       if (!walletClient) return;
       try {
         const client = await getSmartAccountClient(walletClient);
-        
-        // FIX: Pastikan account ada sebelum akses
-        if (!client.account) return; 
+        if (!client.account) return;
 
         const vAddr = client.account.address;
         setVaultAddress(vAddr);
-        const bal = await publicClient.getBalance({ address: vAddr });
-        setVaultEthBalance(formatEther(bal));
+
+        const code = await publicClient.getBytecode({ address: vAddr });
+        setIsDeployed(code !== undefined && code !== null && code !== "0x");
       } catch (e) { console.error(e); }
-    };
-    initVault();
+  };
+
+  useEffect(() => {
+    checkVaultStatus();
   }, [walletClient]);
 
-  // 2. SCAN TOKEN & METADATA
+  // 2. ACTIVATION LOGIC (Gasless)
+  const handleActivate = async () => {
+    if (!walletClient || !vaultAddress) return;
+    setActivating(true);
+    try {
+      const client = await getSmartAccountClient(walletClient);
+      const hash = await client.sendUserOperation({
+        account: client.account!,
+        calls: [{ to: vaultAddress as Address, value: 0n, data: "0x" }]
+      });
+      
+      console.log("Activation Hash:", hash);
+      await new Promise(r => setTimeout(r, 5000)); // Wait for block
+      await checkVaultStatus();
+      alert("Vault Activated Successfully!");
+    } catch (e: any) {
+      alert("Activation Failed: " + e.message);
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  // 3. SCAN WALLET
   const scanOwnerWallet = async () => {
       if (!ownerAddress) return;
       setLoading(true);
       setPotentialValue(0); 
       try {
         const balances = await alchemy.core.getTokenBalances(ownerAddress);
-        
         const nonZeroTokens = balances.tokenBalances.filter((token) => {
-          const isIgnored = IGNORED_TOKENS.includes(token.contractAddress.toLowerCase());
-          return !isIgnored && token.tokenBalance && BigInt(token.tokenBalance) > 0n;
+          // Exclude USDC & WETH from list (kita mau deposit dust/micin)
+          return token.contractAddress.toLowerCase() !== USDC_ADDRESS.toLowerCase() && 
+                 token.tokenBalance && BigInt(token.tokenBalance) > 0n;
         });
 
         const metadataPromises = nonZeroTokens.map(t => alchemy.core.getTokenMetadata(t.contractAddress));
@@ -83,16 +114,11 @@ export const DustDepositView = () => {
           const meta = metadataList[i];
           const rawBal = BigInt(token.tokenBalance || "0");
           const decimals = meta.decimals || 18;
-          const divisor = BigInt(10 ** decimals);
-          const beforeDecimal = rawBal / divisor;
-          const afterDecimal = rawBal % divisor;
-          const formatted = `${beforeDecimal}.${afterDecimal.toString().padStart(decimals, '0').slice(0,4)}`;
-
           return {
             contractAddress: token.contractAddress,
             name: meta.name || "Unknown",
             symbol: meta.symbol || "UNK",
-            balance: formatted,
+            balance: formatUnits(rawBal, decimals),
             rawBalance: token.tokenBalance || "0",
             decimals: decimals,
             logo: meta.logo || null
@@ -100,45 +126,39 @@ export const DustDepositView = () => {
         });
 
         setTokens(formattedTokens);
-      } catch (error) {
-        console.error("Alchemy Scan Error:", error);
-      } finally {
-        setLoading(false);
-      }
+      } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    if (ownerAddress) scanOwnerWallet();
-  }, [ownerAddress]);
+  useEffect(() => { if (ownerAddress) scanOwnerWallet(); }, [ownerAddress]);
 
-  // 3. CALCULATE POTENTIAL VALUE
+  // 4. CALCULATE POTENTIAL VALUE VIA AERODROME
   useEffect(() => {
     const calculateValue = async () => {
       if (tokens.length === 0) return;
       setCalculatingValue(true);
       let totalUsd = 0;
 
-      for (const token of tokens) {
+      // Batasi 5 token pertama aja biar gak berat/rate limit RPC
+      const sampleTokens = tokens.slice(0, 10); 
+
+      await Promise.all(sampleTokens.map(async (token) => {
          try {
-            const params = new URLSearchParams({
-              sellToken: token.contractAddress,
-              buyToken: USDC_ADDRESS, 
-              sellAmount: token.rawBalance, 
-            });
-
-            const res = await fetch(`https://base.api.0x.org/swap/v1/price?${params}`, {
-              headers: { '0x-api-key': process.env.NEXT_PUBLIC_0X_API_KEY || '' }
-            });
-
-            if (res.ok) {
-              const data = await res.json();
-              const usdVal = parseFloat(data.buyAmount) / 1000000;
-              totalUsd += usdVal;
-            }
+            // Cek harga via Aerodrome (Token -> USDC)
+            const path = [token.contractAddress as Address, USDC_ADDRESS as Address];
+            const amounts = await publicClient.readContract({
+                address: ROUTER_ADDRESS,
+                abi: routerAbi,
+                functionName: "getAmountsOut",
+                args: [BigInt(token.rawBalance), path]
+            }) as readonly bigint[];
+            
+            // amounts[1] = USDC Out (6 decimals)
+            const usdcVal = parseFloat(formatUnits(amounts[1], 6));
+            totalUsd += usdcVal;
          } catch (e) {
-            // Ignore error
+            // No pool found, value = 0
          }
-      }
+      }));
       
       setPotentialValue(totalUsd);
       setCalculatingValue(false);
@@ -147,7 +167,7 @@ export const DustDepositView = () => {
     if (tokens.length > 0) calculateValue();
   }, [tokens]);
 
-  // --- LOGIC UI ---
+  // UI HELPERS
   const totalPages = Math.ceil(tokens.length / ITEMS_PER_PAGE);
   const currentTokens = tokens.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
@@ -200,17 +220,24 @@ export const DustDepositView = () => {
     <div className="pb-24 relative min-h-[50vh]">
       
       {/* LOADING OVERLAY */}
-      {depositStatus && (
+      {(depositStatus || activating) && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 max-w-[200px]">
               <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              <div className="text-sm font-bold text-center animate-pulse">{depositStatus}</div>
+              <div className="text-sm font-bold text-center animate-pulse">{activating ? "Activating Vault..." : depositStatus}</div>
            </div>
         </div>
       )}
 
-      {/* HEADER: VAULT INFO */}
-      <div className="p-5 bg-gradient-to-br from-zinc-900 to-zinc-800 text-white rounded-2xl shadow-lg mb-6">
+      {/* HEADER: VAULT INFO + ACTIVATE BUTTON */}
+      <div className="p-5 bg-gradient-to-br from-zinc-900 to-zinc-800 text-white rounded-2xl shadow-lg mb-6 relative overflow-hidden">
+        
+        {/* Status Badge */}
+        <div className={`absolute top-4 right-4 text-[10px] px-2 py-1 rounded-full border font-medium flex items-center gap-1 ${isDeployed ? "bg-green-500/20 border-green-500 text-green-400" : "bg-orange-500/20 border-orange-500 text-orange-400"}`}>
+           {isDeployed ? <Check className="w-3 h-3" /> : <Rocket className="w-3 h-3" />}
+           {isDeployed ? "Active" : "Inactive"}
+        </div>
+
         <div className="flex items-center gap-2 text-zinc-400 text-xs mb-1">
           <Wallet className="w-3 h-3" /> Vault Address (Receiver)
         </div>
@@ -222,17 +249,23 @@ export const DustDepositView = () => {
             <Copy className="w-4 h-4 hover:text-blue-400 transition-colors" />
           </button>
         </div>
-        <div className="flex items-end justify-between border-t border-white/10 pt-3">
-          <div>
-            <div className="text-xs text-zinc-400 mb-1">Gas Balance</div>
-            <div className="text-2xl font-bold tracking-tight">
-              {parseFloat(vaultEthBalance).toFixed(5)} <span className="text-sm font-normal text-zinc-400">ETH</span>
-            </div>
+
+        {/* 🔥 TOMBOL AKTIVASI PINDAH KE SINI 🔥 */}
+        {!isDeployed && vaultAddress && (
+          <div className="mt-4 pt-4 border-t border-white/10">
+            <button 
+              onClick={handleActivate}
+              disabled={activating}
+              className="w-full bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg flex items-center justify-center gap-2 transition-all"
+            >
+              <Rocket className="w-4 h-4" /> 
+              Activate Vault 
+            </button>
+            <p className="text-[10px] text-zinc-400 text-center mt-2">
+              Activation is required for Vault to perform Swaps/Withdrawals.
+            </p>
           </div>
-          <div className="bg-white/10 px-3 py-1 rounded-full text-xs font-medium backdrop-blur-sm">
-            Base Mainnet
-          </div>
-        </div>
+        )}
       </div>
 
       {/* LIST HEADER */}
@@ -247,7 +280,7 @@ export const DustDepositView = () => {
                <Sparks className="w-3 h-3" />
                Potential Value: 
                {calculatingValue ? (
-                 <span className="animate-pulse">Checking...</span>
+                 <span className="animate-pulse">Checking Aerodrome...</span>
                ) : (
                  <span className="font-bold ml-1">~${potentialValue.toFixed(2)}</span>
                )}
@@ -295,7 +328,7 @@ export const DustDepositView = () => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-sm truncate">{token.name}</div>
-                  <div className="text-xs text-zinc-500">{token.balance} {token.symbol}</div>
+                  <div className="text-xs text-zinc-500 truncate">{parseFloat(token.balance).toFixed(4)} {token.symbol}</div>
                 </div>
                 <div className="pl-3">
                   {isSelected ? (
