@@ -41,11 +41,8 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
     },
   });
 
-  // FIX: 
-  // 1. Gunakan 'as any' di dalam config untuk bypass error middleware strictness.
-  // 2. Gunakan 'as SmartAccountClient<...>' di luar untuk memberitahu TypeScript 
-  //    bahwa return value ini PASTI memiliki akun (typeof simpleAccount).
-  
+  // FIX: Menggunakan middleware untuk override gas price (Pimlico Fast)
+  // Dan casting type agar TypeScript tidak error property 'address'
   return createSmartAccountClient({
     account: simpleAccount,
     chain: base,
