@@ -41,15 +41,35 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
     },
   });
 
-  // FIX: Menggunakan middleware untuk override gas price (Pimlico Fast)
-  // Dan casting type agar TypeScript tidak error property 'address'
   return createSmartAccountClient({
     account: simpleAccount,
     chain: base,
     bundlerTransport: http(PIMLICO_URL),
     middleware: {
       gasPrice: async () => {
-        return (await bundlerClient.getUserOperationGasPrice()).fast;
+        try {
+          // 1. Coba ambil harga gas dari Pimlico
+          const gasPrice = await bundlerClient.getUserOperationGasPrice();
+          
+          console.log("✅ DEBUG PIMLICO GAS:", gasPrice); // Cek console browser nanti
+
+          if (gasPrice && gasPrice.fast) {
+             return gasPrice.fast;
+          }
+          
+          console.warn("⚠️ Pimlico return undefined gas, switch to Public RPC...");
+          throw new Error("Pimlico gas undefined");
+
+        } catch (error) {
+          // 2. FALLBACK: Jika Pimlico gagal, ambil dari Public RPC Base
+          console.error("⚠️ Gagal fetch gas Pimlico, pakai fallback:", error);
+          const fee = await publicClient.getGasPrice();
+          // Gunakan harga gas standar untuk MaxFee dan PriorityFee
+          return { 
+            maxFeePerGas: fee, 
+            maxPriorityFeePerGas: fee 
+          };
+        }
       },
     },
   } as any) as SmartAccountClient<Transport, Chain, typeof simpleAccount>;
