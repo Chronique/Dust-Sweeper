@@ -20,7 +20,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
           }`}
         >
           <Download className="w-6 h-6" />
-          <span className="text-[10px] font-medium">Deposit</span>
+          <span className="text-[10px] font-medium">BLUSUKAN</span>
         </button>
 
         {/* TAB 2: SWAP (Eksekusi) */}
@@ -31,7 +31,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
           }`}
         >
           <RefreshDouble className="w-6 h-6" />
-          <span className="text-[10px] font-medium">Swap</span>
+          <span className="text-[10px] font-medium">BAKAR WILAYAH</span>
         </button>
 
         {/* TAB 3: VAULT (Lihat Saldo AA) */}
@@ -42,7 +42,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
           }`}
         >
           <Wallet className="w-6 h-6" />
-          <span className="text-[10px] font-medium">My Vault</span>
+          <span className="text-[10px] font-medium">PANEN</span>
         </button>
       </div>
     </div>

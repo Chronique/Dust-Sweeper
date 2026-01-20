@@ -24,8 +24,8 @@ export default function Demo() {
   // --- TAMBAHAN DEBUGGING (HAPUS NANTI) ---
   useEffect(() => {
     const key = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
-    console.log("🔍 DEBUG VERIFIKASI KEY:");
-    console.log("- Apakah Key terbaca?", key ? "YA" : "TIDAK (UNDEFINED)");
+    console.log("🔍 DEBUG VERIFICATION KEY:");
+    console.log("- Is the key readable?", key ? "YES" : "NO (UNDEFINED)");
     if (key) {
       // Tampilkan 4 huruf awal saja untuk keamanan
       console.log("- 4 Digit Awal:", key.substring(0, 4)); 
