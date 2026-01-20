@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import React, { useState } from "react";
+import { useState, useEffect } from "react";
 import { useFrameContext } from "~/components/providers/frame-provider";
 import { useAccount } from "wagmi";
 
@@ -19,9 +19,19 @@ import { TabType } from "~/types";
 export default function Demo() {
   const frameContext = useFrameContext();
   const { isConnected } = useAccount();
-  
-  // Default tab = Deposit (User pertama masuk mau deposit dulu)
   const [activeTab, setActiveTab] = useState<TabType>("deposit");
+
+  // --- TAMBAHAN DEBUGGING (HAPUS NANTI) ---
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY;
+    console.log("🔍 DEBUG VERIFIKASI KEY:");
+    console.log("- Apakah Key terbaca?", key ? "YA" : "TIDAK (UNDEFINED)");
+    if (key) {
+      // Tampilkan 4 huruf awal saja untuk keamanan
+      console.log("- 4 Digit Awal:", key.substring(0, 4)); 
+      console.log("- Panjang Key:", key.length);
+    }
+  }, []);
 
   return (
     <div style={{ 
