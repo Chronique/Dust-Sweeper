@@ -4,56 +4,134 @@ import { useEffect, useState } from "react";
 import { useWalletClient } from "wagmi";
 import { getSmartAccountClient } from "~/lib/smart-account";
 import { alchemy } from "~/lib/alchemy";
-import { encodeFunctionData, erc20Abi, type Address } from "viem";
-import { RefreshDouble, Coins, WarningCircle } from "iconoir-react";
+import { encodeFunctionData, erc20Abi, type Address, formatUnits } from "viem";
+import { RefreshDouble, Coins } from "iconoir-react";
 
+// KONFIGURASI
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; 
 const NATIVE_ETH_ADDRESS = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
-const DEV_WALLET = "0xYOUR_DEV_WALLET_ADDRESS"; // <--- GANTI INI!
+// Ganti dengan Wallet penerima fee kamu
+const DEV_WALLET = "0x40F29D1365aBC82134fB43c877511082D8B8fcD1"; 
+const MIN_VALUE_USD = 0.01; // Filter: Token di bawah $0.01 dianggap sampah
 
 type OutputToken = "USDC" | "ETH";
+
+interface SwappableToken {
+  address: string;
+  symbol: string;
+  balance: bigint;
+  formattedBalance: string;
+  estimatedValueUsd: number; // Estimasi nilai dalam USD
+  decimals: number;
+}
 
 export const SwapView = () => {
   const { data: walletClient } = useWalletClient();
   const [saAddress, setSaAddress] = useState<string | null>(null);
-  const [tokens, setTokens] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  
+  const [swappableTokens, setSwappableTokens] = useState<SwappableToken[]>([]);
+  const [totalValue, setTotalValue] = useState(0);
+  
+  const [scanning, setScanning] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const [status, setStatus] = useState("");
   const [outputToken, setOutputToken] = useState<OutputToken>("USDC");
 
+  // 1. SCAN & FILTER LOGIC
   useEffect(() => {
-    const init = async () => {
+    const initAndScan = async () => {
       if (!walletClient) return;
+      setScanning(true);
+      setStatus("Scanning vault & checking liquidity...");
+      
       try {
         const client = await getSmartAccountClient(walletClient);
-        setSaAddress(client.account.address);
-        const balances = await alchemy.core.getTokenBalances(client.account.address);
+        const address = client.account.address;
+        setSaAddress(address);
+        
+        // A. Ambil Saldo dari Alchemy
+        const balances = await alchemy.core.getTokenBalances(address);
         const nonZero = balances.tokenBalances.filter(t => t.tokenBalance && BigInt(t.tokenBalance) > 0n);
         
-        setTokens(nonZero.map(t => ({
-            address: t.contractAddress,
-            balance: BigInt(t.tokenBalance || "0")
-        })));
-      } catch (e) { console.error(e); }
-    };
-    init();
-  }, [walletClient]);
+        const validTokens: SwappableToken[] = [];
+        let totalUsd = 0;
 
+        // B. Cek Harga/Likuiditas ke 0x API satu per satu
+        for (const t of nonZero) {
+          // Skip jika tokennya adalah target output (USDC)
+          if (t.contractAddress.toLowerCase() === USDC_ADDRESS.toLowerCase() && outputToken === "USDC") continue;
+
+          try {
+            const rawBalance = BigInt(t.tokenBalance || "0");
+            
+            // Panggil 0x Price untuk cek value estimasi
+            const params = new URLSearchParams({
+              sellToken: t.contractAddress,
+              buyToken: USDC_ADDRESS, 
+              sellAmount: rawBalance.toString(),
+            });
+
+            const res = await fetch(`https://base.api.0x.org/swap/v1/price?${params}`, {
+              headers: { '0x-api-key': process.env.NEXT_PUBLIC_0X_API_KEY || '' }
+            });
+
+            if (!res.ok) continue; // Skip jika error
+
+            const data = await res.json();
+            const buyAmountUsdc = parseFloat(data.buyAmount) / 1000000; // USDC 6 decimals
+
+            // C. Filter: Hanya ambil yang nilainya > $0.01
+            if (buyAmountUsdc > MIN_VALUE_USD) {
+              const metadata = await alchemy.core.getTokenMetadata(t.contractAddress);
+              
+              validTokens.push({
+                address: t.contractAddress,
+                symbol: metadata.symbol || "UNK",
+                decimals: metadata.decimals || 18,
+                balance: rawBalance,
+                formattedBalance: formatUnits(rawBalance, metadata.decimals || 18),
+                estimatedValueUsd: buyAmountUsdc
+              });
+              
+              totalUsd += buyAmountUsdc;
+            }
+          } catch (e) {
+            // Ignore error per token
+          }
+        }
+
+        setSwappableTokens(validTokens);
+        setTotalValue(totalUsd);
+        setStatus("");
+
+      } catch (e: any) { 
+        console.error(e);
+        setStatus("Error scanning wallet.");
+      } finally { 
+        setScanning(false); 
+      }
+    };
+
+    initAndScan();
+  }, [walletClient, outputToken]);
+
+  // 2. EXECUTE BATCH SWAP (SWEEP ALL)
   const handleSweep = async () => {
-    if (!walletClient || !saAddress || tokens.length === 0) return;
-    setLoading(true);
-    setStatus(`Fetching quotes...`);
+    if (!walletClient || !saAddress || swappableTokens.length === 0) return;
+    setProcessing(true);
+    setStatus("Fetching final quotes...");
 
     try {
       const client = await getSmartAccountClient(walletClient);
       const batchCalls = [];
 
-      for (const token of tokens) {
-        if (token.address.toLowerCase() === USDC_ADDRESS.toLowerCase() && outputToken === "USDC") continue;
+      // Loop semua token VALID
+      for (const token of swappableTokens) {
+        const buyTokenAddr = outputToken === "USDC" ? USDC_ADDRESS : NATIVE_ETH_ADDRESS;
 
         const params = new URLSearchParams({
           sellToken: token.address,
-          buyToken: outputToken === "USDC" ? USDC_ADDRESS : NATIVE_ETH_ADDRESS, 
+          buyToken: buyTokenAddr, 
           sellAmount: token.balance.toString(),
           taker: saAddress,
         });
@@ -65,8 +143,8 @@ export const SwapView = () => {
         if (!res.ok) continue;
         const quote = await res.json();
         
-        // Fee 5%
-        const feeAmount = (BigInt(quote.buyAmount) * 5n) / 100n; 
+        const buyAmount = BigInt(quote.buyAmount);
+        const feeAmount = (buyAmount * 5n) / 100n; 
 
         // 1. Approve
         batchCalls.push({
@@ -104,32 +182,99 @@ export const SwapView = () => {
         }
       }
 
-      if (batchCalls.length === 0) throw new Error("No valid swaps");
+      if (batchCalls.length === 0) throw new Error("No valid quotes generated.");
 
-      setStatus("Signing transaction...");
-      const hash = await client.sendUserOperation({ calls: batchCalls });
-      setStatus(`Success! Hash: ${hash}`);
+      setStatus("Signing & Executing Bundle...");
+      
+      const userOpHash = await client.sendUserOperation({ calls: batchCalls });
+      
+      setStatus(`Success! Tx Hash: ${userOpHash}`);
+      setSwappableTokens([]); 
+      setTotalValue(0);
 
-    } catch (e: any) { setStatus(`Error: ${e.message}`); } 
-    finally { setLoading(false); }
+    } catch (e: any) { 
+      console.error(e);
+      setStatus(`Failed: ${e.message}`); 
+    } finally { 
+      setProcessing(false); 
+    }
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 pb-20">
+      {/* 1. OUTPUT SELECTOR */}
       <div className="bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl flex">
-          <button onClick={() => setOutputToken("USDC")} className={`flex-1 py-3 text-sm font-bold rounded-lg ${outputToken === "USDC" ? "bg-white shadow text-blue-600" : "text-zinc-500"}`}>Receive USDC</button>
-          <button onClick={() => setOutputToken("ETH")} className={`flex-1 py-3 text-sm font-bold rounded-lg ${outputToken === "ETH" ? "bg-white shadow text-purple-600" : "text-zinc-500"}`}>Receive ETH</button>
+          <button onClick={() => setOutputToken("USDC")} className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${outputToken === "USDC" ? "bg-white dark:bg-zinc-800 shadow text-blue-600" : "text-zinc-500"}`}>
+            <Coins className="w-4 h-4" /> Receive USDC
+          </button>
+          <button onClick={() => setOutputToken("ETH")} className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${outputToken === "ETH" ? "bg-white dark:bg-zinc-800 shadow text-purple-600" : "text-zinc-500"}`}>
+            <RefreshDouble className="w-4 h-4" /> Receive ETH
+          </button>
       </div>
       
-      <div className="p-4 border border-blue-100 bg-blue-50 rounded-xl text-sm text-blue-800 flex items-start gap-3">
-        <WarningCircle className="w-5 h-5 shrink-0 mt-0.5" />
-        <div>Found {tokens.length} assets ready to swap.</div>
+      {/* 2. SUMMARY BOX */}
+      <div className="p-5 border border-blue-100 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 rounded-2xl flex items-center justify-between">
+        <div>
+          <div className="text-xs text-blue-600 dark:text-blue-400 font-medium mb-1 uppercase tracking-wider">Estimated Value</div>
+          <div className="text-3xl font-bold text-blue-900 dark:text-blue-100">
+            ${totalValue.toFixed(2)}
+          </div>
+        </div>
+        <div className="text-right">
+           <div className="text-xs text-zinc-500">Dust Assets</div>
+           <div className="text-xl font-semibold">{swappableTokens.length} <span className="text-sm font-normal">tokens</span></div>
+        </div>
       </div>
 
-      <button onClick={handleSweep} disabled={loading || tokens.length === 0} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 disabled:bg-zinc-400">
-          {loading ? "Processing..." : `Sweep All`}
+      {/* 3. TOKEN LIST (FILTERED) */}
+      <div className="space-y-1">
+        <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider ml-1">Assets to Sweep ({">"}$0.01)</h3>
+        {scanning ? (
+           <div className="text-center py-8 text-zinc-400 animate-pulse text-sm">Checking liquidity & prices...</div>
+        ) : swappableTokens.length === 0 ? (
+           <div className="text-center py-8 border-2 border-dashed rounded-xl text-zinc-400 text-sm">
+             No valuable dust found to swap.
+           </div>
+        ) : (
+          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+             {swappableTokens.map((t) => (
+               <div key={t.address} className="flex items-center justify-between p-3 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-xl">
+                 <div className="flex items-center gap-3">
+                   <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center text-xs font-bold text-zinc-500">
+                     {t.symbol[0]}
+                   </div>
+                   <div>
+                     <div className="text-sm font-semibold">{t.symbol}</div>
+                     <div className="text-[10px] text-zinc-500">{parseFloat(t.formattedBalance).toFixed(4)}</div>
+                   </div>
+                 </div>
+                 <div className="text-sm font-medium text-green-600">
+                   ~${t.estimatedValueUsd.toFixed(2)}
+                 </div>
+               </div>
+             ))}
+          </div>
+        )}
+      </div>
+
+      {/* 4. ACTION BUTTON */}
+      <button 
+          onClick={handleSweep} 
+          disabled={processing || scanning || swappableTokens.length === 0} 
+          className={`w-full py-4 text-white rounded-2xl font-bold text-lg shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 ${
+            processing || scanning || swappableTokens.length === 0 
+              ? "bg-zinc-300 dark:bg-zinc-800 cursor-not-allowed text-zinc-500 shadow-none" 
+              : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/30"
+          }`}
+      >
+          {processing ? "Sweeping Dust..." : `Sweep All to ${outputToken}`}
       </button>
-      {status && <div className="text-center text-xs mt-2 bg-zinc-100 p-2 rounded">{status}</div>}
+
+      {status && (
+          <div className="text-center text-xs mt-2 bg-zinc-50 dark:bg-zinc-900 p-2 rounded text-zinc-500 border border-zinc-100 dark:border-zinc-800">
+            {status}
+          </div>
+      )}
     </div>
   );
 };
