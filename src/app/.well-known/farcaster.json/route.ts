@@ -25,17 +25,17 @@ export async function GET() {
         "requiredCapabilities": [
           "actions.ready",
           "actions.signIn", 
-          "actions.openMiniApp",
-          "actions.addMiniApp",
+          "actions.open-MiniApp",
+          "actions.add-MiniApp",
           "actions.openUrl",
-          "actions.sendToken",
-          "actions.viewToken", 
-          "actions.composeCast",
-          "actions.viewProfile",
-          "actions.swapToken",
-          "actions.close",
-          "actions.viewCast",
-          "wallet.getEthereumProvider"
+          "actions.send-Token",
+          "actions.view-Token", 
+          "actions.compose-Cast",
+          "actions.view-Profile",
+          "actions.swap-Token",
+          "actions.close-miniapp",
+          "actions.view-Cast",
+          "wallet.wallet-connect-prompt"
         ],
         "requiredChains": [
           "eip155:8453",
