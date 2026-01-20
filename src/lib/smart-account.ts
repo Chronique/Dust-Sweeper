@@ -22,7 +22,6 @@ if (!pimlicoApiKey) throw new Error("❌ API Key Pimlico hilang!");
 
 const PIMLICO_URL = `https://api.pimlico.io/v2/8453/rpc?apikey=${pimlicoApiKey}`;
 
-// Client ini dipakai untuk Bundler DAN Paymaster
 export const pimlicoClient = createPimlicoClient({
   transport: http(PIMLICO_URL),
   entryPoint: {
@@ -52,9 +51,12 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
     chain: base,
     bundlerTransport: http(PIMLICO_URL),
     
-    // 🔥 PENTING: HAPUS 'middleware' block yang lama!
-    // Ganti dengan ini agar Paymaster yang mengisi gas:
-    sponsorUserOperation: pimlicoClient.sponsorUserOperation,
+    // 🔥 PERBAIKAN DISINI: Masukkan ke dalam object 'middleware' 🔥
+    middleware: {
+      sponsorUserOperation: pimlicoClient.sponsorUserOperation,
+      // Tambahkan gasPrice sebagai fallback keamanan
+      gasPrice: async () => (await pimlicoClient.getUserOperationGasPrice()).fast,
+    },
     
   } as any) as SmartAccountClient<Transport, Chain, typeof simpleAccount>;
 };
