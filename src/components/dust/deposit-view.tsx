@@ -131,33 +131,48 @@ export const DustDepositView = () => {
 
   useEffect(() => { if (ownerAddress) scanOwnerWallet(); }, [ownerAddress]);
 
-  // 4. CALCULATE POTENTIAL VALUE VIA AERODROME
+  /// 4. CALCULATE POTENTIAL VALUE (WITH SMART ROUTING)
   useEffect(() => {
     const calculateValue = async () => {
       if (tokens.length === 0) return;
       setCalculatingValue(true);
       let totalUsd = 0;
 
-      // Batasi 5 token pertama aja biar gak berat/rate limit RPC
       const sampleTokens = tokens.slice(0, 10); 
 
       await Promise.all(sampleTokens.map(async (token) => {
          try {
-            // Cek harga via Aerodrome (Token -> USDC)
-            const path = [token.contractAddress as Address, USDC_ADDRESS as Address];
-            const amounts = await publicClient.readContract({
-                address: ROUTER_ADDRESS,
-                abi: routerAbi,
-                functionName: "getAmountsOut",
-                args: [BigInt(token.rawBalance), path]
-            }) as readonly bigint[];
+            const tokenIn = token.contractAddress as Address;
+            const WETH = "0x4200000000000000000000000000000000000006"; // WETH Base
             
-            // amounts[1] = USDC Out (6 decimals)
-            const usdcVal = parseFloat(formatUnits(amounts[1], 6));
+            // 1. Coba Direct: Token -> USDC
+            const pathDirect = [tokenIn, USDC_ADDRESS as Address];
+            
+            let bestOut = 0n;
+
+            try {
+               const res = await publicClient.readContract({
+                  address: ROUTER_ADDRESS, abi: routerAbi, functionName: "getAmountsOut",
+                  args: [BigInt(token.rawBalance), pathDirect]
+               }) as readonly bigint[];
+               bestOut = res[res.length - 1];
+            } catch (e) {}
+
+            // 2. Jika direct gagal/kecil, Coba Hop: Token -> WETH -> USDC
+            if (bestOut === 0n) {
+               const pathHop = [tokenIn, WETH as Address, USDC_ADDRESS as Address];
+               try {
+                  const res = await publicClient.readContract({
+                     address: ROUTER_ADDRESS, abi: routerAbi, functionName: "getAmountsOut",
+                     args: [BigInt(token.rawBalance), pathHop]
+                  }) as readonly bigint[];
+                  if (res[res.length - 1] > bestOut) bestOut = res[res.length - 1];
+               } catch (e) {}
+            }
+            
+            const usdcVal = parseFloat(formatUnits(bestOut, 6)); // USDC 6 decimals
             totalUsd += usdcVal;
-         } catch (e) {
-            // No pool found, value = 0
-         }
+         } catch (e) { }
       }));
       
       setPotentialValue(totalUsd);

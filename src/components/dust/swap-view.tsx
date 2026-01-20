@@ -5,9 +5,9 @@ import { useWalletClient, useAccount } from "wagmi";
 import { getSmartAccountClient, publicClient } from "~/lib/smart-account";
 import { alchemy } from "~/lib/alchemy";
 import { formatUnits, encodeFunctionData, erc20Abi, type Address } from "viem";
-import { Refresh, ArrowRight, Check, Coins, Dollar } from "iconoir-react";
+import { Refresh, ArrowRight, Check, Coins, Dollar, WarningCircle } from "iconoir-react";
 
-// --- AERODROME V1 CONSTANTS (BASE) ---
+// CONSTANTS
 const ROUTER_ADDRESS = "0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43"; 
 const WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -31,7 +31,7 @@ const routerAbi = [
       { internalType: "address", name: "to", type: "address" },
       { internalType: "uint256", name: "deadline", type: "uint256" }
     ],
-    name: "swapExactTokensForETH",
+    name: "swapExactTokensForTokens",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
@@ -44,7 +44,7 @@ const routerAbi = [
       { internalType: "address", name: "to", type: "address" },
       { internalType: "uint256", name: "deadline", type: "uint256" }
     ],
-    name: "swapExactTokensForTokens",
+    name: "swapExactTokensForETH", // Untuk swap ke ETH (WETH unwrapped)
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
@@ -60,10 +60,12 @@ export const SwapView = () => {
   const [target, setTarget] = useState<"ETH" | "USDC">("ETH");
   
   const [quoteAmount, setQuoteAmount] = useState<string | null>(null);
+  const [bestPath, setBestPath] = useState<Address[]>([]); // 🔥 Simpan jalur terbaik
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [swapping, setSwapping] = useState(false);
 
+  // 1. Fetch Tokens (Sama)
   const fetchTokens = async () => {
     if (!ownerAddress || !walletClient) return;
     setLoading(true);
@@ -101,29 +103,65 @@ export const SwapView = () => {
 
   useEffect(() => { fetchTokens(); }, [walletClient]);
 
+  // 2. SMART ROUTING QUOTE (Direct vs Multi-Hop)
   useEffect(() => {
     const getQuote = async () => {
       if (!selectedToken) return;
       setQuoteLoading(true);
       setQuoteAmount(null);
+      setBestPath([]);
 
       try {
         const targetAddress = target === "ETH" ? WETH_ADDRESS : USDC_ADDRESS;
-        const path = [selectedToken.contractAddress as Address, targetAddress as Address];
+        const tokenIn = selectedToken.contractAddress as Address;
+        const amountIn = BigInt(selectedToken.rawBalance);
 
-        // Read from Aerodrome Contract
-        const amounts = await publicClient.readContract({
-          address: ROUTER_ADDRESS,
-          abi: routerAbi,
-          functionName: "getAmountsOut",
-          args: [BigInt(selectedToken.rawBalance), path]
-        }) as readonly bigint[];
+        // --- STRATEGI ROUTING ---
+        // 1. Coba Direct: [Token, Target]
+        const pathDirect = [tokenIn, targetAddress as Address];
+        
+        // 2. Coba Hop via WETH: [Token, WETH, Target]
+        const pathHop = [tokenIn, WETH_ADDRESS as Address, targetAddress as Address];
 
-        const decimals = target === "ETH" ? 18 : 6;
-        setQuoteAmount(formatUnits(amounts[1], decimals));
+        let bestOut = 0n;
+        let finalPath: Address[] = [];
+
+        // Cek Direct
+        try {
+          const res = await publicClient.readContract({
+            address: ROUTER_ADDRESS, abi: routerAbi, functionName: "getAmountsOut",
+            args: [amountIn, pathDirect]
+          }) as readonly bigint[];
+          bestOut = res[res.length - 1];
+          finalPath = pathDirect;
+        } catch (e) {}
+
+        // Cek Hop (Jika target bukan ETH/WETH, karena kalau target ETH pathHop jadi [Token, WETH, WETH] aneh)
+        if (target !== "ETH" && tokenIn.toLowerCase() !== WETH_ADDRESS.toLowerCase()) {
+           try {
+             const res = await publicClient.readContract({
+               address: ROUTER_ADDRESS, abi: routerAbi, functionName: "getAmountsOut",
+               args: [amountIn, pathHop]
+             }) as readonly bigint[];
+             
+             // Kalau Hop lebih untung (atau satu-satunya jalan), pakai Hop
+             if (res[res.length - 1] > bestOut) {
+               bestOut = res[res.length - 1];
+               finalPath = pathHop;
+             }
+           } catch (e) {}
+        }
+
+        if (bestOut > 0n) {
+           const decimals = target === "ETH" ? 18 : 6;
+           setQuoteAmount(formatUnits(bestOut, decimals));
+           setBestPath(finalPath);
+        } else {
+           setQuoteAmount("0");
+        }
 
       } catch (e) {
-        console.warn("No liquidity path found on Aerodrome:", e);
+        console.warn("Routing error:", e);
         setQuoteAmount("0");
       } finally {
         setQuoteLoading(false);
@@ -132,8 +170,9 @@ export const SwapView = () => {
     getQuote();
   }, [selectedToken, target]);
 
+  // 3. EXECUTE SWAP
   const handleSwap = async () => {
-    if (!selectedToken || !quoteAmount || !walletClient) return;
+    if (!selectedToken || !quoteAmount || bestPath.length === 0 || !walletClient) return;
     
     try {
       setSwapping(true);
@@ -141,26 +180,27 @@ export const SwapView = () => {
       const vaultAddress = client.account?.address;
       if (!vaultAddress) return;
 
-      const targetAddress = target === "ETH" ? WETH_ADDRESS : USDC_ADDRESS;
-      const path = [selectedToken.contractAddress as Address, targetAddress as Address];
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 20);
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 20); // 20 min
 
       let swapData: `0x${string}`;
+      
+      // Pilih fungsi swap yang sesuai
+      // Jika target ETH -> swapExactTokensForETH
+      // Jika target USDC -> swapExactTokensForTokens
       if (target === "ETH") {
         swapData = encodeFunctionData({
             abi: routerAbi,
             functionName: "swapExactTokensForETH",
-            args: [BigInt(selectedToken.rawBalance), 0n, path, vaultAddress, deadline]
+            args: [BigInt(selectedToken.rawBalance), 0n, bestPath, vaultAddress, deadline]
         });
       } else {
         swapData = encodeFunctionData({
             abi: routerAbi,
             functionName: "swapExactTokensForTokens",
-            args: [BigInt(selectedToken.rawBalance), 0n, path, vaultAddress, deadline]
+            args: [BigInt(selectedToken.rawBalance), 0n, bestPath, vaultAddress, deadline]
         });
       }
 
-      // 🔥 FIX TYPE ERROR: Cast array to any to bypass strict checks
       const uoCalls = [
         {
           to: selectedToken.contractAddress as Address,
@@ -176,7 +216,7 @@ export const SwapView = () => {
           value: 0n,
           data: swapData
         }
-      ] as any; // <--- INI SOLUSINYA!
+      ] as any;
 
       const hash = await client.sendUserOperation({
         account: client.account,
@@ -186,7 +226,7 @@ export const SwapView = () => {
       console.log("Tx Hash:", hash);
       await new Promise(r => setTimeout(r, 5000));
       
-      alert(`Berhasil Swap ke ${target}! 🚀`);
+      alert(`Sukses Swap via ${bestPath.length > 2 ? 'Multi-Hop' : 'Direct'}! 🚀`);
       setSelectedToken(null);
       setQuoteAmount(null);
       fetchTokens();
@@ -202,12 +242,13 @@ export const SwapView = () => {
   return (
     <div className="pb-20 p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">SWIPE VIA AERODOME</h2>
+        <h2 className="text-lg font-bold">Smart Sweeper 🧹</h2>
         <button onClick={fetchTokens} className="p-2 bg-zinc-100 rounded-full hover:bg-zinc-200">
           <Refresh className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
 
+      {/* TARGET SELECTOR */}
       <div className="flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
         <button 
             onClick={() => { setTarget("ETH"); setSelectedToken(null); }}
@@ -226,7 +267,7 @@ export const SwapView = () => {
       <div className="space-y-2">
         {tokens.length === 0 && !loading && (
           <div className="text-center py-10 border-2 border-dashed rounded-xl text-zinc-400">
-            There are no tokens to swap.
+            Tidak ada token untuk diswap.
           </div>
         )}
 
@@ -263,14 +304,22 @@ export const SwapView = () => {
       {selectedToken && (
         <div className="fixed bottom-24 left-4 right-4 p-4 bg-zinc-900 text-white rounded-2xl shadow-2xl border border-zinc-700 animate-in slide-in-from-bottom-5 z-50">
           <div className="flex items-center justify-between mb-4">
-            <div className="text-sm text-zinc-400">Estimated Output:</div>
+            <div className="text-sm text-zinc-400">Estimasi Output:</div>
             <div className={`font-bold text-xl ${quoteAmount === "0" ? "text-red-400" : "text-green-400"}`}>
-              {quoteLoading ? "Checking..." : 
+              {quoteLoading ? "Routing..." : 
                quoteAmount === "0" ? "No Liquidity" : 
                `${parseFloat(quoteAmount || "0").toFixed(6)} ${target}`
               }
             </div>
           </div>
+          
+          {/* INFO JALUR */}
+          {bestPath.length > 2 && (
+             <div className="text-xs text-blue-300 mb-4 flex items-center gap-1">
+               <WarningCircle className="w-3 h-3" /> Multi-hop: {selectedToken.symbol} → WETH → {target}
+             </div>
+          )}
+
           <button
             disabled={!quoteAmount || quoteAmount === "0" || swapping}
             onClick={handleSwap}
