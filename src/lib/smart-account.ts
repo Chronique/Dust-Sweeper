@@ -15,7 +15,7 @@ export const publicClient = createPublicClient({
 });
 
 /* =======================
-   PIMLICO CONFIG
+   PIMLICO CLIENT (Bundler & Paymaster)
 ======================= */
 const pimlicoApiKey = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
 if (!pimlicoApiKey) throw new Error("❌ API Key Pimlico hilang!");
@@ -39,6 +39,7 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
   }
   const owner = walletClient as WalletClient<Transport, Chain, Account>;
 
+  // 1. Setup Simple Account
   const simpleAccount = await toSimpleSmartAccount({
     client: publicClient,
     owner,
@@ -46,16 +47,21 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
     entryPoint: { address: ENTRYPOINT_ADDRESS_V06, version: "0.6" },
   });
 
+  // 2. Setup Client dengan Paymaster (Mode v0.3)
   return createSmartAccountClient({
     account: simpleAccount,
     chain: base,
     bundlerTransport: http(PIMLICO_URL),
     
-    // 🔥 PERBAIKAN DISINI: Masukkan ke dalam object 'middleware' 🔥
-    middleware: {
-      sponsorUserOperation: pimlicoClient.sponsorUserOperation,
-      // Tambahkan gasPrice sebagai fallback keamanan
-      gasPrice: async () => (await pimlicoClient.getUserOperationGasPrice()).fast,
+    // 🔥 INI PERUBAHANNYA: Langsung pasang paymaster di sini
+    // Permissionless v0.3 akan otomatis mengatur gas & sponsor
+    paymaster: pimlicoClient,
+    
+    // Tambahan: Pastikan estimasi gas juga minta ke Pimlico
+    userOperation: {
+      estimateFeesPerGas: async () => {
+        return (await pimlicoClient.getUserOperationGasPrice()).fast;
+      },
     },
     
   } as any) as SmartAccountClient<Transport, Chain, typeof simpleAccount>;
