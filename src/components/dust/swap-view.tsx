@@ -5,10 +5,10 @@ import { useWalletClient, useAccount } from "wagmi";
 import { getSmartAccountClient } from "~/lib/smart-account";
 import { alchemy } from "~/lib/alchemy";
 import { formatUnits, encodeFunctionData, erc20Abi, type Address } from "viem";
-import { Refresh, ArrowRight, Wallet, Check } from "iconoir-react";
+import { Refresh, ArrowRight, Wallet, Check, Coins } from "iconoir-react";
 
-// Alamat Native ETH untuk KyberSwap
-const NATIVE_ETH = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+// Target Swap: USDC di Base Mainnet
+const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
 export const SwapView = () => {
   const { data: walletClient } = useWalletClient();
@@ -21,7 +21,7 @@ export const SwapView = () => {
   const [loading, setLoading] = useState(false);
   const [swapping, setSwapping] = useState(false);
 
-  // 1. Fetch Token List (Filter hanya token yang ada isinya & bukan ETH)
+  // 1. Fetch Token List (Hanya yang ada isinya & BUKAN USDC)
   const fetchTokens = async () => {
     if (!ownerAddress || !walletClient) return;
     setLoading(true);
@@ -49,10 +49,12 @@ export const SwapView = () => {
           symbol: meta.symbol,
           logo: meta.logo,
           decimals: meta.decimals || 18,
-          rawBalance: t.tokenBalance, // String hex
+          rawBalance: t.tokenBalance,
           formattedBal: formatUnits(BigInt(t.tokenBalance || 0), meta.decimals || 18)
         };
-      });
+      })
+      // Sembunyikan USDC dari list "Source" (karena USDC adalah tujuan)
+      .filter(t => t.contractAddress.toLowerCase() !== USDC_ADDRESS.toLowerCase());
 
       setTokens(formatted);
     } catch (e) { console.error(e); } finally { setLoading(false); }
@@ -62,29 +64,25 @@ export const SwapView = () => {
     fetchTokens();
   }, [walletClient]);
 
-  // 2. Get Quote from KyberSwap (Step 1)
+  // 2. Get Quote to USDC
   const getKyberQuote = async (token: any) => {
     if (!token) return;
     setQuote(null);
     
     try {
-      // API Base URL untuk Base Mainnet
       const baseUrl = "https://aggregator-api.kyberswap.com/base/api/v1/routes";
-      
-      // Params
       const params = new URLSearchParams({
         tokenIn: token.contractAddress,
-        tokenOut: NATIVE_ETH, // Target selalu ETH
-        amountIn: BigInt(token.rawBalance).toString() // Swap Max
+        tokenOut: USDC_ADDRESS, // 🔥 Target ke USDC
+        amountIn: BigInt(token.rawBalance).toString()
       });
 
       const res = await fetch(`${baseUrl}?${params.toString()}`);
       const data = await res.json();
 
       if (data.message === "Successfully" && data.data.routeSummary) {
-        setQuote(data.data); // Simpan route lengkap
+        setQuote(data.data);
       } else {
-        console.warn("No route found:", data);
         setQuote(null);
       }
     } catch (e) {
@@ -92,14 +90,13 @@ export const SwapView = () => {
     }
   };
 
-  // Trigger quote saat token dipilih
   useEffect(() => {
     if (selectedToken) {
       getKyberQuote(selectedToken);
     }
   }, [selectedToken]);
 
-  // 3. Execute Swap (Approve + Swap Batch)
+  // 3. Execute Swap (Gasless)
   const handleSwap = async () => {
     if (!selectedToken || !quote || !walletClient) return;
     
@@ -109,15 +106,14 @@ export const SwapView = () => {
       const vaultAddress = client.account?.address;
       if (!vaultAddress) return;
 
-      // --- STEP A: Build CallData dari Kyber (Step 2) ---
-      // Kita harus minta "data transaksi" yang sudah di-encode oleh Kyber
+      // Build Transaction Route
       const buildRes = await fetch("https://aggregator-api.kyberswap.com/base/api/v1/route/build", {
         method: "POST",
         body: JSON.stringify({
           routeSummary: quote.routeSummary,
           sender: vaultAddress,
-          recipient: vaultAddress, // Hasil swap masuk ke Vault lagi (aman)
-          slippageTolerance: 100 // 1% Slippage (aman buat micin)
+          recipient: vaultAddress,
+          slippageTolerance: 100 // 1%
         })
       });
       
@@ -126,42 +122,38 @@ export const SwapView = () => {
 
       const { data: swapCallData, routerAddress } = buildData.data;
 
-      // --- STEP B: Siapkan UserOp (Batch) ---
-      const uoCalls = [];
+      // Batch Calls: Approve + Swap
+      const uoCalls = [
+        {
+          to: selectedToken.contractAddress as Address,
+          value: 0n,
+          data: encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [routerAddress as Address, BigInt(selectedToken.rawBalance)]
+          })
+        },
+        {
+          to: routerAddress as Address,
+          value: 0n,
+          data: swapCallData as `0x${string}`
+        }
+      ];
 
-      // 1. Approve Token ke Router Kyber (Wajib)
-      uoCalls.push({
-        to: selectedToken.contractAddress as Address,
-        value: 0n,
-        data: encodeFunctionData({
-          abi: erc20Abi,
-          functionName: "approve",
-          args: [routerAddress as Address, BigInt(selectedToken.rawBalance)]
-        })
-      });
+      console.log("Sending Batch Swap USDC...", uoCalls);
 
-      // 2. Eksekusi Swap
-      uoCalls.push({
-        to: routerAddress as Address,
-        value: 0n,
-        data: swapCallData as `0x${string}`
-      });
-
-      console.log("Sending Batch Swap...", uoCalls);
-
-      // --- STEP C: Kirim Gasless Tx ---
       const hash = await client.sendUserOperation({
         account: client.account,
         calls: uoCalls
       });
 
       console.log("Swap Hash:", hash);
-      await new Promise(r => setTimeout(r, 5000)); // Tunggu mining
+      await new Promise(r => setTimeout(r, 5000));
       
-      alert("Swap Berhasil! Cek saldo ETH di Vault.");
+      alert("Berhasil Swap ke USDC! 💰");
       setSelectedToken(null);
       setQuote(null);
-      fetchTokens(); // Refresh list
+      fetchTokens();
 
     } catch (e: any) {
       console.error(e);
@@ -174,16 +166,19 @@ export const SwapView = () => {
   return (
     <div className="pb-20 p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">Dust Sweeper 🧹</h2>
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <Coins className="text-yellow-500" /> Dust to USDC
+        </h2>
         <button onClick={fetchTokens} className="p-2 bg-zinc-100 rounded-full hover:bg-zinc-200">
           <Refresh className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
 
-      {/* LIST TOKEN */}
       <div className="space-y-2">
         {tokens.length === 0 && !loading && (
-          <p className="text-center text-zinc-400 text-sm py-8">Tidak ada token untuk di-swap.</p>
+          <div className="text-center py-10 border-2 border-dashed rounded-xl text-zinc-400">
+            Tidak ada token debu untuk diswap.
+          </div>
         )}
 
         {tokens.map((token, i) => (
@@ -208,7 +203,6 @@ export const SwapView = () => {
                   <div className="text-xs text-zinc-500">{token.formattedBal}</div>
                 </div>
               </div>
-              
               {selectedToken?.contractAddress === token.contractAddress && (
                 <div className="text-blue-600"><Check className="w-5 h-5" /></div>
               )}
@@ -217,28 +211,20 @@ export const SwapView = () => {
         ))}
       </div>
 
-      {/* QUOTE PREVIEW & ACTION */}
       {selectedToken && (
-        <div className="fixed bottom-20 left-4 right-4 p-4 bg-zinc-900 text-white rounded-2xl shadow-2xl border border-zinc-700 animate-in slide-in-from-bottom-5">
+        <div className="fixed bottom-24 left-4 right-4 p-4 bg-zinc-900 text-white rounded-2xl shadow-2xl border border-zinc-700 animate-in slide-in-from-bottom-5 z-50">
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm text-zinc-400">Estimasi Dapat:</div>
-            <div className="font-bold text-xl text-green-400">
-              {quote ? (+quote.routeSummary.amountOut / 1e18).toFixed(6) : "Loading..."} ETH
+            <div className="font-bold text-xl text-blue-400">
+              {quote ? (+quote.routeSummary.amountOut / 1e6).toFixed(4) : "Loading..."} USDC
             </div>
           </div>
-
           <button
             disabled={!quote || swapping}
             onClick={handleSwap}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 py-3 rounded-xl font-bold flex items-center justify-center gap-2"
           >
-            {swapping ? (
-              <>Processing...</>
-            ) : (
-              <>
-                Swap to ETH <ArrowRight className="w-4 h-4" />
-              </>
-            )}
+            {swapping ? "Processing..." : "Swap to USDC"} <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       )}
