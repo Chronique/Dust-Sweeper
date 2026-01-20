@@ -5,19 +5,19 @@ import { useWalletClient, useAccount } from "wagmi";
 import { getSmartAccountClient, publicClient } from "~/lib/smart-account";
 import { alchemy } from "~/lib/alchemy";
 import { formatEther, parseEther, encodeFunctionData, erc20Abi, type Address } from "viem";
-import { Copy, Wallet, ArrowRight, Refresh } from "iconoir-react";
+import { Copy, Wallet, ArrowRight, Refresh, Sparks } from "iconoir-react";
 
 export const VaultView = () => {
   const { data: walletClient } = useWalletClient();
-  const { address: ownerAddress } = useAccount(); // Alamat EOA (Tujuan Withdraw)
+  const { address: ownerAddress } = useAccount(); 
   
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
   const [ethBalance, setEthBalance] = useState("0");
   const [tokens, setTokens] = useState<any[]>([]);
   
   // State UX
-  const [loading, setLoading] = useState(false); // Loading awal fetch data
-  const [actionLoading, setActionLoading] = useState<string | null>(null); // Loading Overlay (Processing...)
+  const [loading, setLoading] = useState(false); 
+  const [actionLoading, setActionLoading] = useState<string | null>(null); 
 
   const fetchVaultData = async () => {
     if (!walletClient) return;
@@ -64,28 +64,34 @@ export const VaultView = () => {
     fetchVaultData();
   }, [walletClient]);
 
-  // --- FITUR WITHDRAW ---
+  // --- FITUR WITHDRAW (PERBAIKAN LOGIC ETH) ---
   const handleWithdraw = async (token?: any) => {
     if (!walletClient || !ownerAddress) return;
 
     try {
-      const isEth = !token; // Kalau gak ada parameter token, berarti withdraw ETH
+      const isEth = !token; 
       const symbol = isEth ? "ETH" : token.symbol;
       
-      setActionLoading(`Withdrawing ${symbol}...`); // Munculkan Overlay
+      setActionLoading(`Withdrawing ${symbol}...`); 
 
       const client = await getSmartAccountClient(walletClient);
-      
       let callData: any;
 
       if (isEth) {
-        // Withdraw Native ETH (Sisakan dikit buat gas future tx, misal 0.0001)
-        // Disini kita tarik simple aja, manual input nanti bisa dikembangkan
-        // Untuk demo: Tarik 0.001 ETH atau max balance
-        const amount = parseEther("0.001"); // Contoh hardcode safety
+        // PERBAIKAN: HITUNG MAX WITHDRAW AMAN
+        // Kita harus menyisakan 'dust' untuk membayar gas eksekusi internal Smart Account
+        const currentBal = parseEther(ethBalance);
+        const gasBuffer = parseEther("0.00005"); // ~ $0.15 Buffer
+        
+        if (currentBal <= gasBuffer) {
+           throw new Error("Saldo ETH terlalu kecil untuk menutupi biaya gas.");
+        }
+
+        const amountToSend = currentBal - gasBuffer;
+
         callData = {
           to: ownerAddress,
-          value: amount,
+          value: amountToSend, // Kirim Sisa (Max - Buffer)
           data: "0x"
         };
       } else {
@@ -107,24 +113,24 @@ export const VaultView = () => {
 
       setActionLoading("Confirming Transaction...");
       
-      // Tunggu 3 Detik (Pura-pura nunggu block confirmation biar UX enak)
+      // Tunggu 4 Detik
       await new Promise(resolve => setTimeout(resolve, 4000));
       
       // Refresh Data
       await fetchVaultData();
 
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("Withdraw Failed (Cek Console)");
+      alert(`Withdraw Gagal: ${e.message || "Unknown error"}`);
     } finally {
-      setActionLoading(null); // Tutup Overlay
+      setActionLoading(null); 
     }
   };
 
   return (
     <div className="pb-20 space-y-4 relative min-h-[50vh]">
       
-      {/* LOADING OVERLAY (TRANSPARAN DI TENGAH) */}
+      {/* LOADING OVERLAY */}
       {actionLoading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 max-w-[200px]">
@@ -149,10 +155,11 @@ export const VaultView = () => {
             <div className="text-2xl font-bold">
                 {parseFloat(ethBalance).toFixed(4)} <span className="text-sm font-normal text-zinc-400">ETH</span>
             </div>
-            {/* Tombol Withdraw ETH Kecil */}
-            {parseFloat(ethBalance) > 0 && (
+            
+            {/* Tombol Withdraw ETH (Hanya muncul jika saldo > 0.0001) */}
+            {parseFloat(ethBalance) > 0.0001 && (
                <button onClick={() => handleWithdraw()} className="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-full border border-zinc-700 flex items-center gap-1 transition-all">
-                 Withdraw <ArrowRight className="w-3 h-3" />
+                 Withdraw All <ArrowRight className="w-3 h-3" />
                </button>
             )}
         </div>
@@ -186,7 +193,6 @@ export const VaultView = () => {
                         </div>
                     </div>
                     
-                    {/* WITHDRAW BUTTON PER TOKEN */}
                     <button 
                       onClick={() => handleWithdraw(token)}
                       className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
