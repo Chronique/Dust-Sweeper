@@ -24,7 +24,7 @@ export const VaultView = () => {
     try {
       const client = await getSmartAccountClient(walletClient);
       
-      // FIX: Cek account
+      // Cek account
       if (!client.account) return;
 
       const address = client.account.address;
@@ -67,7 +67,6 @@ export const VaultView = () => {
     fetchVaultData();
   }, [walletClient]);
 
-  // --- FITUR WITHDRAW ---
   const handleWithdraw = async (token?: any) => {
     if (!walletClient || !ownerAddress) return;
 
@@ -75,11 +74,13 @@ export const VaultView = () => {
       const isEth = !token; 
       const symbol = isEth ? "ETH" : token.symbol;
       
-      setActionLoading(`Withdrawing ${symbol}...`); 
+      setActionLoading(isEth 
+        ? "Deploying & Withdrawing..." 
+        : `Withdrawing ${symbol}...`
+      ); 
 
       const client = await getSmartAccountClient(walletClient);
       
-      // FIX: Cek account lagi sebelum transaksi
       if (!client.account) throw new Error("Akun tidak ditemukan");
 
       let callData: any;
@@ -87,14 +88,14 @@ export const VaultView = () => {
       if (isEth) {
         const currentBal = parseEther(ethBalance);
         
-        // --- PERBAIKAN BUFFER GAS ---
-        // 0.0002 ETH (Sekitar $0.60)
-        // Kita butuh buffer agak besar untuk "Prefund" (Jaminan Gas)
-        // Sisa uang yang tidak terpakai akan otomatis tetap ada di wallet, tidak hilang.
-        const gasBuffer = parseEther("0.0002"); 
+        // --- BUFFER AMAN UNTUK DEPLOYMENT ---
+        // 0.0005 ETH (~$1.50)
+        // Kita butuh buffer agak besar karena ini mungkin transaksi pertama
+        // yang sekaligus menanggung biaya Deploy Contract.
+        const gasBuffer = parseEther("0.0005"); 
         
         if (currentBal <= gasBuffer) {
-           throw new Error("Saldo ETH tidak cukup untuk cover gas fee (Butuh min 0.0002 ETH).");
+           throw new Error("Saldo tidak cukup untuk Biaya Deploy + Gas (Min sisa 0.0005 ETH).");
         }
 
         const amountToSend = currentBal - gasBuffer;
@@ -116,7 +117,7 @@ export const VaultView = () => {
         };
       }
 
-      // FIX: Pass 'account' secara eksplisit
+      // Pass 'account' eksplisit
       const hash = await client.sendUserOperation({
         account: client.account,
         calls: [callData]
@@ -125,16 +126,16 @@ export const VaultView = () => {
 
       setActionLoading("Confirming...");
       
-      await new Promise(resolve => setTimeout(resolve, 4000));
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Tunggu agak lamaan dikit
       await fetchVaultData();
 
     } catch (e: any) {
       console.error(e);
-      // Parsing pesan error agar user paham
       let msg = "Withdraw Gagal.";
-      if (e.message.includes("Saldo ETH")) msg = e.message;
-      else if (e.message.includes("preverification gas")) msg = "Gas fee sedang tinggi, coba lagi nanti.";
-      else if (e.message.includes("UserOperation reverted")) msg = "Transaksi ditolak (Mungkin saldo kurang untuk gas).";
+      // Pesan error yang lebih jelas
+      if (e.message.includes("Saldo")) msg = e.message;
+      else if (e.message.includes("UserOperation reverted")) msg = "Gagal Deploy/Withdraw. Pastikan sisa ETH cukup untuk gas deployment.";
+      else if (e.message.includes("AA21")) msg = "Perlu deposit ETH dulu untuk biaya gas.";
       
       alert(msg);
     } finally {
@@ -171,8 +172,8 @@ export const VaultView = () => {
                 {parseFloat(ethBalance).toFixed(5)} <span className="text-sm font-normal text-zinc-400">ETH</span>
             </div>
             
-            {/* Tombol Withdraw ETH hanya muncul jika saldo cukup aman */}
-            {parseFloat(ethBalance) > 0.0002 && (
+            {/* Tombol Withdraw muncul jika saldo > 0.0005 */}
+            {parseFloat(ethBalance) > 0.0005 && (
                <button onClick={() => handleWithdraw()} className="text-xs bg-zinc-800 hover:bg-zinc-700 px-3 py-1.5 rounded-full border border-zinc-700 flex items-center gap-1 transition-all">
                  Withdraw All <ArrowRight className="w-3 h-3" />
                </button>
