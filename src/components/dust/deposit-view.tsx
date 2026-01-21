@@ -67,12 +67,32 @@ export const DustDepositView = () => {
   const handleActivate = async () => {
     if (!walletClient || !vaultAddress) return;
     
-    const balance = await publicClient.getBalance({ address: vaultAddress as Address });
-    if (balance < 200000000000000n) { 
-      // 🔥 GANTI ALERT -> TOAST ERROR
-      setToast({ msg: "ETH balance insufficient! Top up with at least 0.0001 ETH..", type: "error" });
-      return;
+    // 2. ACTIVATION LOGIC (GASLESS)
+  const handleActivate = async () => {
+    if (!walletClient || !vaultAddress) return;
+    
+    // Langsung gas aktivasi tanpa cek saldo!
+    setActivating(true);
+    try {
+      const client = await getSmartAccountClient(walletClient);
+      const hash = await client.sendUserOperation({
+        account: client.account!,
+        calls: [{ to: vaultAddress as Address, value: 0n, data: "0x" }]
+      });
+      
+      console.log("Activation Hash:", hash);
+      setToast({ msg: "Activating Vault (Sponsored)...", type: "success" });
+      
+      await new Promise(r => setTimeout(r, 5000));
+      await checkVaultStatus();
+      setToast({ msg: "Vault Successfully Activated!", type: "success" });
+    } catch (e: any) {
+      console.error(e);
+      setToast({ msg: "Activation Failed: " + (e.shortMessage || "Error"), type: "error" });
+    } finally {
+      setActivating(false);
     }
+  };
 
     setActivating(true);
     try {
