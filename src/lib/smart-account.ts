@@ -1,7 +1,8 @@
 import { createSmartAccountClient, type SmartAccountClient } from "permissionless";
 import { toSafeSmartAccount } from "permissionless/accounts";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
-import { createPublicClient, http, type WalletClient, type Transport, type Chain, type Account } from "viem";
+// 🔥 PERBAIKAN 1: Tambahkan 'toHex' di import
+import { createPublicClient, http, type WalletClient, type Transport, type Chain, type Account, toHex } from "viem";
 import { createPaymasterClient } from "viem/account-abstraction";
 import { base } from "viem/chains";
 import { entryPoint06Address } from "viem/account-abstraction";
@@ -48,9 +49,14 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
       address: ENTRYPOINT_ADDRESS_V06,
       version: "0.6",
     },
-    // 🔥 PERBAIKAN DISINI: Ganti 'safeVersion' jadi 'version'
     version: "1.4.1", 
   });
+
+  // 🔥 PERBAIKAN 2: Gunakan (safeAccount as any) untuk membungkam error TypeScript
+  // Ini tetap aman dilakukan karena di runtime Javascript properti ini bisa di-overwrite
+  (safeAccount as any).getDummySignature = async () => {
+    return toHex(new Uint8Array(1000).fill(1)) as `0x${string}`;
+  };
 
   // 5. Setup Smart Account Client
   return createSmartAccountClient({
@@ -63,6 +69,7 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
 
     userOperation: {
       estimateFeesPerGas: async () => {
+        // Tetap pakai Pimlico untuk estimasi gas
         return (await pimlicoClient.getUserOperationGasPrice()).fast;
       },
     },
