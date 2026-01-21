@@ -4,13 +4,12 @@ import { useEffect, useState } from "react";
 import { useAccount, useWriteContract, useWalletClient } from "wagmi";
 import { getSmartAccountClient, publicClient } from "~/lib/smart-account";
 import { alchemy } from "~/lib/alchemy";
-import { formatUnits, erc20Abi, type Address } from "viem";
+import { formatUnits, erc20Abi, encodeFunctionData, type Address } from "viem"; // 🔥 Wajib ada encodeFunctionData
 import { Copy, Wallet, CheckCircle, Circle, NavArrowLeft, NavArrowRight, ArrowUp, Sparks, Rocket, Check } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
+// Contract Address USDC di Base Mainnet
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-// Alamat Factory V1.1 (Yang sudah di-whitelist di Paymaster)
-const COINBASE_FACTORY_V1 = "0xba5ed110efdba3d005bfc882d75358acbbb85842";
 
 interface TokenData {
   contractAddress: string;
@@ -62,21 +61,27 @@ export const DustDepositView = () => {
     checkVaultStatus();
   }, [walletClient]);
 
-  // 2. ACTIVATION LOGIC (GASLESS - FIX DUPLIKAT)
+  // 2. ACTIVATION LOGIC (FIX: USDC Transfer 0 Pancingan)
   const handleActivate = async () => {
-    if (!walletClient || !vaultAddress) return;
+    if (!walletClient || !vaultAddress || !ownerAddress) return;
     
     setActivating(true);
     try {
       const client = await getSmartAccountClient(walletClient);
       
-      // Kirim transaksi dummy ke Factory agar disponsori Paymaster
+      // 🔥 FIX: Kirim 0 USDC ke diri sendiri (Safe Transaction)
+      // Ini akan memicu deployment wallet tanpa error revert dari factory
+      // Pastikan Contract USDC sudah di-whitelist di Paymaster!
       const hash = await client.sendUserOperation({
         account: client.account!,
         calls: [{ 
-            to: COINBASE_FACTORY_V1, 
+            to: USDC_ADDRESS as Address, 
             value: 0n, 
-            data: "0x" 
+            data: encodeFunctionData({
+              abi: erc20Abi,
+              functionName: "transfer",
+              args: [ownerAddress as Address, 0n] // Transfer 0 ke Owner
+            })
         }]
       });
       
