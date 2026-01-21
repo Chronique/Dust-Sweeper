@@ -1,11 +1,8 @@
 import { createSmartAccountClient, type SmartAccountClient } from "permissionless";
-import { toSafeSmartAccount } from "permissionless/accounts";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
-// 🔥 PERBAIKAN 1: Tambahkan 'toHex' di import
-import { createPublicClient, http, type WalletClient, type Transport, type Chain, type Account, toHex } from "viem";
-import { createPaymasterClient } from "viem/account-abstraction";
+import { createPublicClient, http, type WalletClient, type Transport, type Chain, type Account } from "viem";
+import { createPaymasterClient, entryPoint06Address, toCoinbaseSmartAccount } from "viem/account-abstraction";
 import { base } from "viem/chains";
-import { entryPoint06Address } from "viem/account-abstraction";
 
 const ENTRYPOINT_ADDRESS_V06 = entryPoint06Address;
 
@@ -41,37 +38,44 @@ const coinbasePaymasterClient = createPaymasterClient({
 export const getSmartAccountClient = async (walletClient: WalletClient) => {
   if (!walletClient.account) throw new Error("Wallet tidak terdeteksi");
 
-  // 4. Setup Safe Smart Account
-  const safeAccount = await toSafeSmartAccount({
-    client: publicClient,
-    owners: [walletClient as WalletClient<Transport, Chain, Account>],
-    entryPoint: {
-      address: ENTRYPOINT_ADDRESS_V06,
-      version: "0.6",
+  // Custom Owner Wrapper (Bungkam Error TS Strict)
+  const customOwner = {
+    address: walletClient.account.address,
+    async signMessage({ message }: { message: any }) {
+      return walletClient.signMessage({ message, account: walletClient.account! });
     },
-    version: "1.4.1", 
-  });
+    async signTypedData(params: any) {
+      return walletClient.signTypedData({ ...params, account: walletClient.account! });
+    },
+    async signTransaction(params: any) {
+      return walletClient.signTransaction({ ...params, chain: base, account: walletClient.account! });
+    },
+    type: "local", 
+    source: "custom",
+    publicKey: walletClient.account.address
+  } as any; 
 
-  // 🔥 PERBAIKAN 2: Gunakan (safeAccount as any) untuk membungkam error TypeScript
-  // Ini tetap aman dilakukan karena di runtime Javascript properti ini bisa di-overwrite
-  (safeAccount as any).getDummySignature = async () => {
-    return toHex(new Uint8Array(1000).fill(1)) as `0x${string}`;
-  };
+  // 4. Setup Coinbase Smart Account (Native dari Viem)
+  const coinbaseAccount = await toCoinbaseSmartAccount({
+    client: publicClient,
+    owners: [customOwner],
+    // 🔥 FIX: Tambahkan version "1.1" (Wajib di Viem terbaru)
+    version: "1.1", 
+  });
 
   // 5. Setup Smart Account Client
   return createSmartAccountClient({
-    account: safeAccount,
+    account: coinbaseAccount,
     chain: base,
     bundlerTransport: http(PIMLICO_URL),
     
-    // Auto Sponsor ke Coinbase
+    // Auto Sponsor ke Coinbase Paymaster
     paymaster: coinbasePaymasterClient,
 
     userOperation: {
       estimateFeesPerGas: async () => {
-        // Tetap pakai Pimlico untuk estimasi gas
         return (await pimlicoClient.getUserOperationGasPrice()).fast;
       },
     },
-  }) as any as SmartAccountClient<Transport, Chain, typeof safeAccount>;
+  }) as any as SmartAccountClient<Transport, Chain, typeof coinbaseAccount>;
 };
