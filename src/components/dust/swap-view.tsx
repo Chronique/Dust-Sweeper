@@ -242,7 +242,7 @@ export const SwapView = () => {
   return (
     <div className="pb-20 p-4 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">Smart Sweeper 🧹</h2>
+        <h2 className="text-lg font-bold">Smart Panen</h2>
         <button onClick={fetchTokens} className="p-2 bg-zinc-100 rounded-full hover:bg-zinc-200">
           <Refresh className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </button>
@@ -267,7 +267,7 @@ export const SwapView = () => {
       <div className="space-y-2">
         {tokens.length === 0 && !loading && (
           <div className="text-center py-10 border-2 border-dashed rounded-xl text-zinc-400">
-            Tidak ada token untuk diswap.
+            There are no tokens to swap..
           </div>
         )}
 
@@ -304,12 +304,12 @@ export const SwapView = () => {
       {selectedToken && (
         <div className="fixed bottom-24 left-4 right-4 p-4 bg-zinc-900 text-white rounded-2xl shadow-2xl border border-zinc-700 animate-in slide-in-from-bottom-5 z-50">
           <div className="flex items-center justify-between mb-4">
-            <div className="text-sm text-zinc-400">Estimasi Output:</div>
+            <div className="text-sm text-zinc-400">Estimate Output:</div>
             <div className={`font-bold text-xl ${quoteAmount === "0" ? "text-red-400" : "text-green-400"}`}>
               {quoteLoading ? "Routing..." : 
                quoteAmount === "0" ? "No Liquidity" : 
                `${parseFloat(quoteAmount || "0").toFixed(6)} ${target}`
-              }
+          }
             </div>
           </div>
           

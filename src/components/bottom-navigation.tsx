@@ -15,6 +15,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
       
       {/* 1. BLUSUKAN (Deposit) - Icon Peta (Map) */}
       <button
+        id="tour-nav-deposit" // 🔥 ID UNTUK TOUR
         onClick={() => onTabChange("deposit")}
         className={`flex flex-col items-center gap-1.5 transition-all duration-300 w-20 group ${
           activeTab === "deposit" 
@@ -33,6 +34,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
 
       {/* 2. BAKAR WILAYAH (Swap) - Icon Api (Flame) */}
       <button
+        id="tour-nav-swap" // 🔥 ID UNTUK TOUR
         onClick={() => onTabChange("swap")}
         className={`flex flex-col items-center gap-1.5 transition-all duration-300 w-24 group ${
           activeTab === "swap" 
@@ -51,6 +53,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
 
       {/* 3. PANEN (Vault) - Icon Gandum (Wheat) */}
       <button
+        id="tour-nav-vault" // 🔥 ID UNTUK TOUR
         onClick={() => onTabChange("vault")}
         className={`flex flex-col items-center gap-1.5 transition-all duration-300 w-20 group ${
           activeTab === "vault" 

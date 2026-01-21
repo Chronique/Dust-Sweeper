@@ -9,45 +9,46 @@ export const WalletConnectPrompt = () => {
   const [showEvmList, setShowEvmList] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  // Hindari hydration mismatch
+  // Prevent hydration mismatch
   useEffect(() => {
     setMounted(true);
   }, []);
 
   if (!mounted) return null;
 
-  // 1. Cari Connector untuk Base Smart Wallet (biasanya Coinbase Wallet SDK)
+  // 1. Find Connector for Base Smart Wallet (usually Coinbase Wallet SDK)
   const baseConnector = connectors.find(
     (c) => c.id === 'coinbaseWalletSDK' || c.name.toLowerCase().includes('coinbase')
   );
 
-  // 2. Connector sisanya (Metamask, Injected, dll)
+  // 2. Filter remaining connectors (Metamask, Injected, etc)
   const evmConnectors = connectors.filter(
     (c) => c.id !== 'coinbaseWalletSDK' && !c.name.toLowerCase().includes('coinbase')
   );
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] p-6 text-center animate-fade-in">
+       
        {/* Header / Logo */}
-       {/* Hapus class bg-blue-600 p-4 jika gambarmu sudah bulat/bagus */}
        <div className="mb-6 drop-shadow-xl">
           <img 
-            src="/nyawit.png"  // <-- Ganti dengan path gambarmu (misal: /base-logo.png)
+            src="/nyawit.png" 
             alt="App Logo" 
-            className="w-20 h-20 rounded-2xl object-cover" // Atur ukuran di sini
+            className="w-20 h-20 rounded-2xl object-cover" 
           />
        </div>
        
        <div className="mb-8">
-         <h2 className="text-xl font-bold mb-2 text-zinc-800 dark:text-white">Nyawit Nih Orang</h2>
+         <h2 className="text-xl font-bold mb-2 text-zinc-800 dark:text-white">Nyawit Dust Sweeper</h2>
          <p className="text-sm text-zinc-500 max-w-[250px] mx-auto leading-relaxed">
-           Connect your wallet to start earning.
+           Connect your wallet to start sweeping dust tokens into valuable assets.
          </p>
        </div>
 
-       <div className="w-full max-w-xs space-y-3">
+       {/* BUTTONS CONTAINER (Target ID for Product Tour) */}
+       <div className="w-full max-w-xs space-y-3" id="tour-connect-wallet">
          
-         {/* TOMBOL 1: BASE SMART WALLET (RECOMMENDED) */}
+         {/* OPTION 1: BASE SMART WALLET (RECOMMENDED) */}
          {baseConnector && (
            <button 
              onClick={() => connect({ connector: baseConnector })}
@@ -65,7 +66,7 @@ export const WalletConnectPrompt = () => {
            </button>
          )}
 
-         {/* TOMBOL 2: EVM WALLET (DROPDOWN) */}
+         {/* OPTION 2: EVM WALLET (DROPDOWN) */}
          <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 transition-all">
             <button 
               onClick={() => setShowEvmList(!showEvmList)}
@@ -83,7 +84,7 @@ export const WalletConnectPrompt = () => {
               {showEvmList ? <NavArrowUp className="w-5 h-5 text-zinc-400" /> : <NavArrowDown className="w-5 h-5 text-zinc-400" />}
             </button>
 
-            {/* LIST EXTENSIONS (MUNCUL JIKA DIKLIK) */}
+            {/* EXTENSION LIST (Visible if clicked) */}
             {showEvmList && (
               <div className="border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 p-2 space-y-1">
                 {evmConnectors.length > 0 ? (
@@ -93,13 +94,12 @@ export const WalletConnectPrompt = () => {
                       onClick={() => connect({ connector })}
                       className="w-full p-3 text-sm font-medium rounded-lg hover:bg-white dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 flex items-center justify-center gap-2 border border-transparent hover:border-zinc-200 dark:hover:border-zinc-800 transition-all"
                     >
-                      {/* Tampilkan Nama Walletnya (bukan cuma Connect) */}
                       {connector.name}
                     </button>
                   ))
                 ) : (
                   <div className="p-3 text-xs text-center text-zinc-400">
-                    Tidak ada wallet lain terdeteksi.
+                    No other wallets detected.
                   </div>
                 )}
               </div>

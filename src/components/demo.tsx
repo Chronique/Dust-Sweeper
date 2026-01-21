@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useFrameContext } from "~/components/providers/frame-provider";
 import { useAccount } from "wagmi";
 
-// --- IMPORTS KOMPONEN UTAMA ---
+// --- IMPORTS MAIN COMPONENTS ---
 import { DustDepositView } from "~/components/dust/deposit-view";
 import { SwapView } from "~/components/dust/swap-view";
 import { VaultView } from "~/components/dust/vault-view";
@@ -38,9 +38,9 @@ export default function Demo() {
             <WalletConnectPrompt />
           ) : (
             <>
-              {/* --- KONTEN BERDASARKAN TAB --- */}
+              {/* --- CONTENT BASED ON ACTIVE TAB --- */}
               
-              {/* TAB 1: DEPOSIT (Scan EOA & Kirim ke Vault) */}
+              {/* TAB 1: DEPOSIT (Scan EOA & Send to Vault) */}
               {activeTab === "deposit" && (
                 <div className="animate-in fade-in zoom-in-95 duration-300">
                   <div className="mb-4 pl-1">
@@ -48,14 +48,14 @@ export default function Demo() {
                       Deposit Dust
                     </h2>
                     <p className="text-xs text-zinc-500 font-medium">
-                      Scan your wallet and move dust to Vault.
+                      Scan your wallet and move dust tokens to your Vault.
                     </p>
                   </div>
                   <DustDepositView />
                 </div>
               )}
 
-              {/* TAB 2: SWAP (Eksekusi 0x/Aerodrome) */}
+              {/* TAB 2: SWAP (Execute Aerodrome Smart Router) */}
               {activeTab === "swap" && (
                 <div className="animate-in fade-in zoom-in-95 duration-300">
                   <div className="mb-4 pl-1">
@@ -63,18 +63,18 @@ export default function Demo() {
                       Sweep & Swap
                     </h2>
                     <p className="text-xs text-zinc-500 font-medium">
-                      Convert all vault assets to USDC/ETH.
+                      Convert all vault assets into USDC or ETH.
                     </p>
                   </div>
                   <SwapView /> 
                 </div>
                )}    
 
-              {/* TAB 3: VAULT (Lihat Isi Brankas) */}
+              {/* TAB 3: VAULT (View Vault Assets) */}
               {activeTab === "vault" && (
                 <div className="animate-in fade-in zoom-in-95 duration-300">
                   <div className="mb-4 pl-1">
-                    <h2 className="text-xl font-bold bg-gradient-to-r from-orange-600 to-yellow-600 bg-clip-text text-transparent">
+                    <h2 className="text-xl font-bold bg-gradient-to-r from-yellow-600 to-orange-600 bg-clip-text text-transparent">
                       My Vault
                     </h2>
                     <p className="text-xs text-zinc-500 font-medium">
@@ -88,8 +88,8 @@ export default function Demo() {
           )}
         </div>
 
-        {/* --- NAVIGASI BAWAH (FIXED) --- */}
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/80 dark:bg-black/80 backdrop-blur-lg border-t border-zinc-200 dark:border-zinc-800">
+        {/* --- BOTTOM NAVIGATION (FIXED) --- */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/80 dark:bg-black/80 backdrop-blur-lg border-t border-zinc-200 dark:border-zinc-800 safe-area-pb">
            <div className="max-w-lg mx-auto">
              <BottomNavigation 
                activeTab={activeTab}

@@ -36,12 +36,12 @@ export function TopBar() {
       if (navigator.share) {
         await navigator.share({
           title: "Nyawit - Dust Sweeper",
-          text: "Ubah token receh jadi aset berharga!",
+          text: "Turn small tokens into valuable assets!",
           url: window.location.href
         });
       } else {
         await navigator.clipboard.writeText(window.location.href);
-        alert("Link tersalin ke clipboard! 📋");
+        alert("Link copied to clipboard! 📋");
       }
     } catch (e) { console.error(e); }
   };
@@ -60,8 +60,9 @@ export function TopBar() {
   return (
     <div className="w-full mb-6 mt-2 flex items-center justify-between">
       
-      {/* --- KIRI: LOGO + ANIMASI TEKS --- */}
-      <div className="flex items-center relative">
+      {/* --- KIRI: LOGO + ANIMASI TEKS (TARGET TOUR) --- */}
+      {/* 🔥 ID UNTUK TOUR DISINI */}
+      <div className="flex items-center relative" id="tour-logo"> 
         <div className="relative z-20 bg-white dark:bg-black rounded-full p-1 shadow-lg shadow-blue-500/10">
           <Image 
             src="/nyawit.png" 
@@ -102,7 +103,7 @@ export function TopBar() {
         <button 
           className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-blue-600 hover:bg-blue-50 transition-all hidden sm:block"
           title="Pin App"
-          onClick={() => alert("Add to Home Screen untuk akses lebih cepat! 📱")}
+          onClick={() => alert("Add to Home Screen for faster access! 📱")}
         >
            <Pin className="w-4 h-4" />
         </button>
@@ -120,7 +121,7 @@ export function TopBar() {
         <button 
           onClick={toggleTheme}
           className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-yellow-600 hover:bg-yellow-50 dark:hover:text-yellow-400 transition-all mr-1"
-          title="Ganti Tema"
+          title="Toggle Theme"
         >
            {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </button>

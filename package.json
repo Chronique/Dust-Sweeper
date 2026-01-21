@@ -25,6 +25,7 @@
     "alchemy-sdk": "^3.6.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "driver.js": "^1.4.0",
     "iconoir-react": "^7.11.0",
     "lucide-react": "^0.542.0",
     "next": "16.0.7",

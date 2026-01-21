@@ -140,6 +140,14 @@ export const DustDepositView = () => {
 
   useEffect(() => { if (ownerAddress) scanOwnerWallet(); }, [ownerAddress]);
 
+
+  // 1. Tambahkan Helper Function ini di atas komponen atau di dalam komponen
+const formatDustValue = (val: number) => {
+  if (val === 0) return "$0.00";
+  if (val < 0.01) return `$${val.toFixed(6)}`; // Micin mode (6 desimal)
+  return `$${val.toFixed(2)}`; // Normal mode (2 desimal)
+};
+
   // 4. CALCULATE POTENTIAL VALUE (SEQUENTIAL & SMART ROUTING)
   useEffect(() => {
     const calculateValue = async () => {
@@ -287,10 +295,10 @@ export const DustDepositView = () => {
               className="w-full bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg flex items-center justify-center gap-2 transition-all"
             >
               <Rocket className="w-4 h-4" /> 
-              Activate Vault (Free)
+              Activate Vault 
             </button>
             <p className="text-[10px] text-zinc-400 text-center mt-2">
-              Aktivasi diperlukan agar Vault bisa melakukan Swap/Withdraw.
+              Activation is required for the Vault to perform Swaps/Withdraws.
             </p>
           </div>
         )}
@@ -310,7 +318,7 @@ export const DustDepositView = () => {
                {calculatingValue ? (
                  <span className="animate-pulse">Checking Aerodrome...</span>
                ) : (
-                 <span className="font-bold ml-1">~${potentialValue.toFixed(2)}</span>
+                 <span className="font-bold ml-1">{formatDustValue(potentialValue)}</span>
                )}
              </div>
            )}
