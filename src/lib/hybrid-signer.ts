@@ -1,11 +1,9 @@
-// src/lib/hybrid-signer.ts
 import { type WalletClient, type Hex } from "viem";
 import { toAccount } from "viem/accounts";
 
 /**
- * HYBRID SIGNER
- * Tugas: Mengubah WalletClient (MetaMask/EOA) menjadi 'LocalAccount' yang valid
- * untuk permissionless.js tanpa memicu error "owner does not support raw sign".
+ * HYBRID SIGNER (FIXED)
+ * Memaksa Viem mengenali ini sebagai Local Account agar tidak error raw sign.
  */
 export const getHybridSigner = (walletClient: WalletClient) => {
   if (!walletClient.account) {
@@ -18,8 +16,13 @@ export const getHybridSigner = (walletClient: WalletClient) => {
   return toAccount({
     address: address,
 
-    // 1. SIGN MESSAGE (Wajib untuk UserOp)
-    // Ini akan memanggil popup sign di wallet asli user (MetaMask/Farcaster)
+    // 🔥🔥🔥 BAGIAN INI WAJIB ADA (JANGAN DIHAPUS) 🔥🔥🔥
+    // Ini memberi tahu Viem: "Ini akun lokal, jangan minta raw sign ke wallet asli!"
+    type: "local",    
+    source: "custom", 
+    // --------------------------------------------------------
+
+    // 1. SIGN MESSAGE (Wajib untuk UserOp - Smart Account pakai ini)
     async signMessage({ message }) {
       return walletClient.signMessage({ 
         message, 
@@ -36,11 +39,10 @@ export const getHybridSigner = (walletClient: WalletClient) => {
     },
 
     // 3. SIGN TRANSACTION (DUMMY / BYPASS)
-    // Masalah "Raw Sign" diselesaikan di sini.
-    // Viem mewajibkan fungsi ini ada, tapi Smart Account TIDAK PERNAH memakainya.
-    // Kita return signature "kosong" (65 bytes zero signature) agar validasi lolos.
+    // Fungsi ini membuat Viem "puas" bahwa akun ini bisa sign transaction,
+    // meskipun sebenarnya kita tidak pernah mengirim raw transaction dari sini.
     async signTransaction(transaction) {
-      // Return 65-byte dummy signature (format r,s,v valid tapi isinya nol)
+      // Signature dummy agar lolos validasi
       return "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as Hex;
     },
   });

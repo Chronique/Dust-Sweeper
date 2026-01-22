@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useWalletClient, useAccount } from "wagmi";
 import { getSmartAccountClient } from "~/lib/smart-account";
 import { alchemy } from "~/lib/alchemy";
-import { formatUnits, parseUnits, erc20Abi, type Address } from "viem";
+import { formatUnits, parseUnits, erc20Abi, type Address,encodeFunctionData } from "viem";
 import { Refresh, ArrowRight, Check, Coins, Dollar, WarningCircle } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
@@ -149,7 +149,6 @@ export const SwapView = () => {
             // Encode ulang approve biar aman (Viem style)
             if (typeof call.data === 'object') {
                 const { abi, functionName, args } = call.data as any;
-                // eslint-disable-next-line @typescript-eslint/no-var-requires
                 const { encodeFunctionData } = require("viem"); 
                 return { ...call, data: encodeFunctionData({ abi, functionName, args }) };
             }
