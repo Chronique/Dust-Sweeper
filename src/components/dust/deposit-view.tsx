@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useAccount, useWriteContract, useWalletClient } from "wagmi";
 import { getSmartAccountClient, publicClient } from "~/lib/smart-account";
-import { alchemy } from "~/lib/alchemy";
+// 🔥 Hapus import alchemy, ganti dengan fetchMoralisTokens
+import { fetchMoralisTokens } from "~/lib/moralis-data";
 import { formatUnits, erc20Abi, type Address, formatEther } from "viem";
 import { Copy, Wallet, CheckCircle, Circle, NavArrowLeft, NavArrowRight, ArrowUp, Sparks, Rocket, Check, WarningTriangle } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
@@ -25,7 +26,7 @@ export const DustDepositView = () => {
   const { writeContractAsync } = useWriteContract();
 
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
-  const [vaultEthBalance, setVaultEthBalance] = useState<bigint>(0n); // 🔥 Cek Saldo ETH Vault
+  const [vaultEthBalance, setVaultEthBalance] = useState<bigint>(0n);
   const [isDeployed, setIsDeployed] = useState(false);
   const [activating, setActivating] = useState(false);
 
@@ -50,11 +51,9 @@ export const DustDepositView = () => {
         const vAddr = client.account.address;
         setVaultAddress(vAddr);
 
-        // Cek Status Deployment
         const code = await publicClient.getBytecode({ address: vAddr });
         setIsDeployed(code !== undefined && code !== null && code !== "0x");
 
-        // 🔥 Cek Saldo ETH (Buat Bayar Gas)
         const bal = await publicClient.getBalance({ address: vAddr });
         setVaultEthBalance(bal);
 
@@ -63,7 +62,6 @@ export const DustDepositView = () => {
 
   useEffect(() => {
     checkVaultStatus();
-    // Auto refresh saldo tiap 5 detik biar user tau kalau deposit masuk
     const interval = setInterval(checkVaultStatus, 5000);
     return () => clearInterval(interval);
   }, [walletClient]);
@@ -72,7 +70,6 @@ export const DustDepositView = () => {
   const handleActivate = async () => {
     if (!walletClient || !vaultAddress) return;
     
-    // Cek saldo ETH dulu
     if (vaultEthBalance === 0n) {
         setToast({ msg: "Vault needs ETH to pay for gas! Please deposit Base Sepolia ETH.", type: "error" });
         return;
@@ -82,7 +79,6 @@ export const DustDepositView = () => {
     try {
       const client = await getSmartAccountClient(walletClient);
       
-      // Kirim 0 ETH ke diri sendiri (Trigger Deployment)
       const hash = await client.sendUserOperation({
         account: client.account!,
         calls: [{ 
@@ -106,40 +102,37 @@ export const DustDepositView = () => {
     }
   };
 
-  // 3. SCAN WALLET
+  // 3. SCAN WALLET (🔥 LOGIC BARU: PAKE MORALIS)
   const scanOwnerWallet = async () => {
       if (!ownerAddress) return;
       setLoading(true);
       setPotentialValue(0); 
       try {
-        // Alchemy Setup untuk Sepolia (Default Alchemy SDK usually Mainnet, perlu override network kalau mau akurat)
-        // Untuk demo dust token, kita pakai data dummy atau skip kalau di testnet jarang ada dust
-        // Tapi kodingan ini tetap jalan mencari token yg ada saldonya.
-        const balances = await alchemy.core.getTokenBalances(ownerAddress);
-        const nonZeroTokens = balances.tokenBalances.filter((token) => {
-             return token.tokenBalance && BigInt(token.tokenBalance) > 0n;
-        });
+        // Panggil helper Moralis kita
+        const moralisData = await fetchMoralisTokens(ownerAddress);
 
-        const metadataPromises = nonZeroTokens.map(t => alchemy.core.getTokenMetadata(t.contractAddress));
-        const metadataList = await Promise.all(metadataPromises);
-
-        const formattedTokens: TokenData[] = nonZeroTokens.map((token, i) => {
-          const meta = metadataList[i];
-          const rawBal = BigInt(token.tokenBalance || "0");
-          const decimals = meta.decimals || 18;
-          return {
-            contractAddress: token.contractAddress,
-            name: meta.name || "Unknown",
-            symbol: meta.symbol || "UNK",
-            balance: formatUnits(rawBal, decimals),
-            rawBalance: token.tokenBalance || "0",
-            decimals: decimals,
-            logo: meta.logo || null
-          };
-        });
+        // Filter & Format
+        const formattedTokens: TokenData[] = moralisData
+          .filter(t => BigInt(t.balance) > 0n) // Hapus yang saldo 0
+          .map((t) => {
+            return {
+              contractAddress: t.token_address,
+              name: t.name || "Unknown",
+              symbol: t.symbol || "UNK",
+              balance: formatUnits(BigInt(t.balance), t.decimals),
+              rawBalance: t.balance,
+              decimals: t.decimals,
+              logo: t.thumbnail || t.logo || null // Moralis kasih thumbnail juga
+            };
+          });
 
         setTokens(formattedTokens);
-      } catch (error) { console.error(error); } finally { setLoading(false); }
+      } catch (error) { 
+        console.error(error); 
+        setToast({ msg: "Failed to scan wallet", type: "error" });
+      } finally { 
+        setLoading(false); 
+      }
   };
 
   useEffect(() => { if (ownerAddress) scanOwnerWallet(); }, [ownerAddress]);
@@ -148,7 +141,7 @@ export const DustDepositView = () => {
     return `$${val.toFixed(2)}`;
   };
 
-  // UI HELPERS
+  // UI HELPERS (Pagination & Select)
   const totalPages = Math.ceil(tokens.length / ITEMS_PER_PAGE);
   const currentTokens = tokens.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
@@ -273,14 +266,13 @@ export const DustDepositView = () => {
         )}
       </div>
 
-      {/* TOKEN LIST & DEPOSIT (Sama seperti sebelumnya) */}
+      {/* TOKEN LIST */}
       <div className="flex items-end justify-between mb-3 px-1">
         <div>
            <h3 className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
              Wallet Assets <span className="text-xs font-normal text-zinc-400">({tokens.length})</span>
            </h3>
         </div>
-
         <button 
           onClick={toggleSelectAllPage}
           className="text-xs font-medium text-blue-600 hover:text-blue-700 mb-1"
@@ -292,7 +284,7 @@ export const DustDepositView = () => {
       </div>
 
       {loading ? (
-        <div className="text-center py-10 text-zinc-400 animate-pulse">Scanning wallet (Sepolia)...</div>
+        <div className="text-center py-10 text-zinc-400 animate-pulse">Scanning wallet via Moralis...</div>
       ) : tokens.length === 0 ? (
         <div className="text-center py-10 text-zinc-400 border-2 border-dashed rounded-xl">
           No tokens found in owner wallet.
