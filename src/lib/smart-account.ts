@@ -18,7 +18,7 @@ export const publicClient = createPublicClient({
   transport: http(`https://base-sepolia.g.alchemy.com/v2/${alchemyApiKey}`),
 });
 
-// 2. Pimlico Client (Bundler - Base Sepolia Chain ID 84532)
+// 2. Pimlico Client (Bundler)
 const PIMLICO_URL = `https://api.pimlico.io/v2/84532/rpc?apikey=${pimlicoApiKey}`;
 
 export const pimlicoClient = createPimlicoClient({
@@ -32,11 +32,11 @@ export const pimlicoClient = createPimlicoClient({
 export const getSmartAccountClient = async (walletClient: WalletClient) => {
   if (!walletClient.account) throw new Error("Wallet tidak terdeteksi");
 
-  // 🔥 CUSTOM OWNER WRAPPER (FIXED)
+  // 🔥 CUSTOM OWNER WRAPPER (ANTI ERROR)
   const customOwner = {
     address: walletClient.account.address,
     
-    // 1. Forward signing request ke Wallet (MetaMask/Coinbase Wallet)
+    // 1. Forward permintaan tanda tangan ke Wallet Asli
     async signMessage({ message }: { message: any }) {
       return walletClient.signMessage({ message, account: walletClient.account! });
     },
@@ -44,14 +44,14 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
       return walletClient.signTypedData({ ...params, account: walletClient.account! });
     },
 
-    // 2. STUB signTransaction (PENTING!)
-    // Kita biarkan function ini ada biar Type 'local' valid, 
-    // tapi isinya error/kosong karena Smart Account TIDAK butuh ini untuk UserOp.
+    // 2. FUNGSI PALSU (STUB) - SOLUSI UTAMA
+    // Kita pasang ini supaya tidak error "does not support raw sign".
+    // Smart Account sebenernya gak butuh ini untuk UserOp, cuma butuh 'ada' aja.
     async signTransaction(params: any) {
       throw new Error("signTransaction not supported for Smart Account owner");
     },
 
-    // 3. Wajib 'local' agar lolos validasi 'toCoinbaseSmartAccount'
+    // 3. Wajib 'local' agar lolos validasi toCoinbaseSmartAccount
     type: "local", 
     source: "custom",
     publicKey: walletClient.account.address
@@ -64,13 +64,12 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
     version: "1.1", 
   });
 
-  // 5. Setup Smart Account Client
+  // 5. Setup Smart Account Client (Manual Gas / Self Pay)
   return createSmartAccountClient({
     account: coinbaseAccount,
     chain: baseSepolia,
     bundlerTransport: http(PIMLICO_URL),
     
-    // Gas dibayar user sendiri (Manual Mode)
     userOperation: {
       estimateFeesPerGas: async () => {
         return (await pimlicoClient.getUserOperationGasPrice()).fast;

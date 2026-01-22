@@ -11,6 +11,7 @@
   "dependencies": {
     "@base-org/account": "^2.5.0",
     "@base-org/account-ui": "^1.0.1",
+    "@coinbase/wallet-sdk": "^4.3.7",
     "@farcaster/auth-kit": "^0.8.1",
     "@farcaster/miniapp-core": "^0.4.1",
     "@farcaster/miniapp-node": "^0.1.11",

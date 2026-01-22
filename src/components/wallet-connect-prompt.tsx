@@ -5,7 +5,9 @@ import { useConnect } from "wagmi";
 import { Wallet, Hexagon, NavArrowDown, NavArrowUp } from "iconoir-react";
 
 export const WalletConnectPrompt = () => {
-  const { connectors, connect } = useConnect();
+  // 🔥 FIX 1: Ambil variable 'error' dari useConnect
+  const { connectors, connect, error } = useConnect();
+  
   const [showEvmList, setShowEvmList] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -45,8 +47,26 @@ export const WalletConnectPrompt = () => {
          </p>
        </div>
 
-       {/* BUTTONS CONTAINER (Target ID for Product Tour) */}
+       {/* BUTTONS CONTAINER */}
        <div className="w-full max-w-xs space-y-3" id="tour-connect-wallet">
+
+        {/* DEBUG SECTION */}
+        <div className="flex flex-col gap-2 mb-4 p-2 bg-zinc-100 dark:bg-zinc-800 rounded text-left">
+          <p className="text-[10px] font-mono text-zinc-500">Debug Connectors ({connectors.length}):</p>
+          <div className="flex flex-wrap gap-2">
+            {connectors.map((connector) => (
+                <button
+                key={connector.uid}
+                onClick={() => connect({ connector })}
+                className="bg-zinc-300 dark:bg-zinc-700 hover:bg-zinc-400 text-[10px] py-1 px-2 rounded text-zinc-800 dark:text-zinc-200"
+                >
+                {connector.name}
+                </button>
+            ))}
+          </div>
+          {/* 🔥 FIX 2: Gunakan variable 'error' (huruf kecil) */}
+          {error && <div className="text-red-500 text-xs font-mono break-all bg-red-100 p-1 rounded mt-1">{error.message}</div>}
+        </div>
          
          {/* OPTION 1: BASE SMART WALLET (RECOMMENDED) */}
          {baseConnector && (
