@@ -1,8 +1,9 @@
 import { createSmartAccountClient, type SmartAccountClient } from "permissionless";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
-import { createPublicClient, http, type WalletClient, type Transport, type Chain, type Account } from "viem";
+import { createPublicClient, http, type WalletClient, type Transport, type Chain } from "viem";
 import { entryPoint06Address, toCoinbaseSmartAccount } from "viem/account-abstraction";
 import { baseSepolia } from "viem/chains"; 
+import { toAccount } from "viem/accounts"; // 🔥 Helper Resmi
 
 const ENTRYPOINT_ADDRESS_V06 = entryPoint06Address;
 
@@ -18,7 +19,7 @@ export const publicClient = createPublicClient({
   transport: http(`https://base-sepolia.g.alchemy.com/v2/${alchemyApiKey}`),
 });
 
-// 2. Pimlico Client (Bundler)
+// 2. Pimlico Client (Bundler - Base Sepolia)
 const PIMLICO_URL = `https://api.pimlico.io/v2/84532/rpc?apikey=${pimlicoApiKey}`;
 
 export const pimlicoClient = createPimlicoClient({
@@ -32,30 +33,28 @@ export const pimlicoClient = createPimlicoClient({
 export const getSmartAccountClient = async (walletClient: WalletClient) => {
   if (!walletClient.account) throw new Error("Wallet tidak terdeteksi");
 
-  // 🔥 CUSTOM OWNER WRAPPER (ANTI ERROR)
-  const customOwner = {
+  // 🔥 SOLUSI FINAL: Gunakan 'toAccount' dengan 'as any' di signTypedData
+  const customOwner = toAccount({
     address: walletClient.account.address,
     
-    // 1. Forward permintaan tanda tangan ke Wallet Asli
-    async signMessage({ message }: { message: any }) {
+    // Delegasi Sign Message
+    async signMessage({ message }) {
       return walletClient.signMessage({ message, account: walletClient.account! });
     },
-    async signTypedData(params: any) {
-      return walletClient.signTypedData({ ...params, account: walletClient.account! });
+    
+    // 🔥 FIX: Tambahkan 'as any' di sini untuk membungkam error Generics
+    async signTypedData(params) {
+      return walletClient.signTypedData({ 
+        ...params, 
+        account: walletClient.account! 
+      } as any);
     },
-
-    // 2. FUNGSI PALSU (STUB) - SOLUSI UTAMA
-    // Kita pasang ini supaya tidak error "does not support raw sign".
-    // Smart Account sebenernya gak butuh ini untuk UserOp, cuma butuh 'ada' aja.
-    async signTransaction(params: any) {
-      throw new Error("signTransaction not supported for Smart Account owner");
+    
+    // Stub Transaction (Biar gak error Raw Sign)
+    async signTransaction(transaction) {
+      throw new Error("Smart Account Owner cannot sign raw transactions.");
     },
-
-    // 3. Wajib 'local' agar lolos validasi toCoinbaseSmartAccount
-    type: "local", 
-    source: "custom",
-    publicKey: walletClient.account.address
-  } as any; 
+  });
 
   // 4. Setup Coinbase Smart Account
   const coinbaseAccount = await toCoinbaseSmartAccount({
@@ -64,12 +63,13 @@ export const getSmartAccountClient = async (walletClient: WalletClient) => {
     version: "1.1", 
   });
 
-  // 5. Setup Smart Account Client (Manual Gas / Self Pay)
+  // 5. Setup Smart Account Client (Manual Gas)
   return createSmartAccountClient({
     account: coinbaseAccount,
     chain: baseSepolia,
     bundlerTransport: http(PIMLICO_URL),
     
+    // User bayar gas sendiri (Self Pay)
     userOperation: {
       estimateFeesPerGas: async () => {
         return (await pimlicoClient.getUserOperationGasPrice()).fast;
