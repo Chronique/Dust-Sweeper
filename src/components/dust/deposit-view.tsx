@@ -8,8 +8,8 @@ import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher";
 import { publicClient } from "~/lib/simple-smart-account"; 
 import { fetchMoralisTokens } from "~/lib/moralis-data";
 import { formatUnits, erc20Abi, type Address, encodeFunctionData, parseEther, formatEther } from "viem";
-import { baseSepolia } from "viem/chains"; // 👈 IMPORT CHAIN ID
-import { Copy, Wallet, CheckCircle, Circle, NavArrowLeft, NavArrowRight, ArrowUp, Rocket, Check, Refresh, ArrowDown, Coins, WarningTriangle } from "iconoir-react";
+import { baseSepolia } from "viem/chains"; 
+import { Copy, Wallet, CheckCircle, Circle, NavArrowLeft, NavArrowRight, ArrowUp, Rocket, Check, Refresh, ArrowDown, Coins, WarningTriangle, Flash } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
 interface TokenData {
@@ -24,7 +24,7 @@ interface TokenData {
 
 export const DustDepositView = () => {
   const { address: ownerAddress, connector, chainId } = useAccount();
-  const { switchChainAsync } = useSwitchChain(); // Untuk memaksa pindah chain
+  const { switchChainAsync } = useSwitchChain(); 
   const { data: walletClient } = useWalletClient();
   const { writeContractAsync } = useWriteContract();
   const { sendTransactionAsync } = useSendTransaction();
@@ -85,6 +85,36 @@ export const DustDepositView = () => {
       }
   };
 
+  // 🔥 0. ACTIVATE / DEPLOY VAULT
+  // Ini diperlukan agar contract terbentuk, sehingga bisa di-Direct Withdraw
+  const handleActivate = async () => {
+      if (!walletClient || !vaultAddress) return;
+      setActivating(true);
+      setDepositStatus("Deploying...");
+      try {
+          const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
+          
+          // Kirim 0 ETH ke diri sendiri via UserOp -> Ini memicu Factory Deploy
+          const hash = await client.sendUserOperation({
+              account: client.account!,
+              calls: [{ to: vaultAddress as Address, value: 0n, data: "0x" }]
+          });
+
+          console.log("Deploy Hash:", hash);
+          setToast({ msg: "Vault Deployed! 🚀", type: "success" });
+          
+          await new Promise(r => setTimeout(r, 5000));
+          await checkVaultStatus();
+
+      } catch (e: any) {
+          console.error(e);
+          setToast({ msg: "Deploy Failed", type: "error" });
+      } finally {
+          setActivating(false);
+          setDepositStatus(null);
+      }
+  };
+
   // --- LOGIC PERSENTASE WITHDRAW ---
   const handleSetPercent = (percent: number) => {
       if (vaultEthBalance === 0n) return;
@@ -98,12 +128,12 @@ export const DustDepositView = () => {
       setWithdrawAmount(formatEther(amount));
   };
 
-  // 🔥 2. MANUAL ETH DEPOSIT (FIX: FORCE CHAIN ID)
+  // 🔥 2. MANUAL ETH DEPOSIT
   const handleManualDepositEth = async () => {
     if (!walletClient || !vaultAddress || !depositEthAmount) return;
 
     try {
-        await ensureSepolia(); // Cek Network Dulu
+        await ensureSepolia(); 
 
         const amountWei = parseEther(depositEthAmount);
         const maxLimit = parseEther("0.005");
@@ -119,7 +149,6 @@ export const DustDepositView = () => {
 
         setDepositStatus("Sending ETH...");
         
-        // 👇 FIX: Tambahkan chainId: baseSepolia.id
         const hash = await sendTransactionAsync({
             to: vaultAddress as Address,
             value: amountWei,
@@ -141,12 +170,18 @@ export const DustDepositView = () => {
     }
   };
 
-  // 🔥 3. DIRECT WITHDRAWAL (FIX: FORCE CHAIN ID)
+  // 🔥 3. DIRECT WITHDRAWAL
   const handleWithdraw = async () => {
     if (!walletClient || !vaultAddress || !ownerAddress || !withdrawAmount) return;
     
+    // Safety Check: Harus deploy dulu
+    if (!isDeployed) {
+        setToast({ msg: "Activate Vault first!", type: "error" });
+        return;
+    }
+
     try {
-        await ensureSepolia(); // Cek Network Dulu
+        await ensureSepolia(); 
 
         const amountWei = parseEther(withdrawAmount);
         if (amountWei <= 0n) {
@@ -175,7 +210,6 @@ export const DustDepositView = () => {
             stateMutability: 'payable'
         }] as const;
 
-        // 👇 FIX: Tambahkan chainId: baseSepolia.id
         const txHash = await writeContractAsync({
             address: vaultAddress as Address,
             abi: executeAbi,
@@ -203,7 +237,7 @@ export const DustDepositView = () => {
     }
   };
 
-  // 4. SCAN WALLET & BATCH DEPOSIT (FIX: FORCE CHAIN ID)
+  // 4. SCAN WALLET & BATCH DEPOSIT
   const scanOwnerWallet = async () => {
       if (!ownerAddress) return;
       setLoading(true);
@@ -244,7 +278,7 @@ export const DustDepositView = () => {
       setDepositStatus("Preparing Batch...");
       const isCoinbaseWallet = connector?.id === 'coinbaseWalletSDK';
       try {
-        await ensureSepolia(); // Cek Network Dulu
+        await ensureSepolia(); 
 
         if (isCoinbaseWallet) {
           setDepositStatus(`Batching ${selectedTokens.size} assets...`);
@@ -268,7 +302,6 @@ export const DustDepositView = () => {
               const token = tokens.find(t => t.contractAddress === tokenAddr);
               if (!token) continue;
               setDepositStatus(`Depositing ${token.symbol}...`);
-              // 👇 FIX: Tambahkan chainId
               await writeContractAsync({
                   address: tokenAddr as Address,
                   abi: erc20Abi,
@@ -305,12 +338,23 @@ export const DustDepositView = () => {
         </div>
       )}
 
-      {/* HEADER: VAULT ADDRESS */}
+      {/* HEADER: VAULT ADDRESS & SMALL DEPLOY BUTTON */}
       <div className="p-5 bg-gradient-to-br from-zinc-900 to-zinc-800 text-white rounded-2xl shadow-lg mb-6 relative overflow-hidden">
-        <div className={`absolute top-4 right-4 text-[10px] px-2 py-1 rounded-full border font-medium flex items-center gap-1 ${isDeployed ? "bg-green-500/20 border-green-500 text-green-400" : "bg-orange-500/20 border-orange-500 text-orange-400"}`}>
-           {isDeployed ? <Check className="w-3 h-3" /> : <Rocket className="w-3 h-3" />}
-           {isDeployed ? "Active" : "Undeployed"}
-        </div>
+        
+        {/* BUTTON AKTIVASI KECIL (Hanya muncul kalau belum deploy) */}
+        {!isDeployed && (
+            <div className="absolute top-4 right-4">
+                <button 
+                    onClick={handleActivate}
+                    disabled={activating}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-white/10 hover:bg-white/20 border border-white/10 rounded-full text-[10px] font-bold text-yellow-300 transition-all animate-pulse"
+                >
+                    <Flash className="w-3 h-3" />
+                    Activate
+                </button>
+            </div>
+        )}
+
         <div className="flex items-center gap-2 text-zinc-400 text-xs mb-1">
           <Wallet className="w-3 h-3" /> Smart Vault Address
         </div>
@@ -464,8 +508,17 @@ export const DustDepositView = () => {
                 </div>
                 
                 <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg text-xs text-yellow-700 dark:text-yellow-400 flex items-start gap-2">
-                   <WarningTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                   <span>Max withdraw leaves 0.00005 ETH to ensure gas safety for future transactions.</span>
+                   {!isDeployed ? (
+                       <>
+                        <WarningTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span>Vault is not active. Click "Activate" in the top card first!</span>
+                       </>
+                   ) : (
+                       <>
+                        <WarningTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span>Max withdraw leaves 0.00005 ETH to ensure gas safety for future transactions.</span>
+                       </>
+                   )}
                 </div>
             </div>
         </div>
