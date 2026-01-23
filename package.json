@@ -20,7 +20,7 @@
     "@radix-ui/react-icons": "^1.3.2",
     "@radix-ui/react-label": "^2.1.8",
     "@radix-ui/react-toggle-group": "^1.1.11",
-    "@tanstack/react-query": "^5.90.10",
+    "@tanstack/react-query": "^5.90.20",
     "@wagmi/core": "^3.2.2",
     "@worldcoin/mini-apps-ui-kit-react": "^1.4.0",
     "alchemy-sdk": "^3.6.5",
@@ -39,7 +39,7 @@
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
     "viem": "^2.44.4",
-    "wagmi": "^3.0.1"
+    "wagmi": "^3.4.1"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

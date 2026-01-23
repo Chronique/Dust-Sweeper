@@ -2,15 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useWalletClient, useAccount } from "wagmi";
-import { getSmartAccountClient, publicClient } from "~/lib/smart-account";
+// 👇 1. GANTI IMPORT: Pakai Switcher
+import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher"; 
+import { publicClient } from "~/lib/simple-smart-account"; // Pinjam publicClient dari sini
 import { alchemy } from "~/lib/alchemy";
 import { formatEther, formatUnits, encodeFunctionData, erc20Abi, type Address } from "viem";
-import { Copy, Wallet, ArrowRight, Refresh, Rocket, Check, Dollar, NavArrowLeft, NavArrowRight } from "iconoir-react";
+import { Copy, Wallet, Rocket, Check, Dollar, NavArrowLeft, NavArrowRight, Refresh } from "iconoir-react";
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const ITEMS_PER_PAGE = 5; 
 
-// --- KOMPONEN LOGO ---
+// --- KOMPONEN LOGO (SAMA) ---
 const TokenLogo = ({ token }: { token: any }) => {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => { setSrc(token.logo || null); }, [token]);
@@ -37,10 +39,10 @@ const TokenLogo = ({ token }: { token: any }) => {
   );
 };
 
-// 🔥 PASTIKAN NAMA EXPORT INI ADALAH 'VaultView'
 export const VaultView = () => {
   const { data: walletClient } = useWalletClient();
-  const { address: ownerAddress } = useAccount(); 
+  // 👇 2. AMBIL CONNECTOR (Penting untuk deteksi Coinbase)
+  const { address: ownerAddress, connector } = useAccount(); 
   
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
   const [ethBalance, setEthBalance] = useState("0");
@@ -57,7 +59,8 @@ export const VaultView = () => {
     if (!walletClient) return;
     setLoading(true);
     try {
-      const client = await getSmartAccountClient(walletClient);
+      // 👇 3. GUNAKAN UNIFIED CLIENT + CONNECTOR ID
+      const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
       if (!client.account) return;
 
       const address = client.account.address;
@@ -104,7 +107,7 @@ export const VaultView = () => {
 
   useEffect(() => {
     fetchVaultData();
-  }, [walletClient]);
+  }, [walletClient, connector?.id]); // 👇 4. Update dependency agar reload saat wallet ganti
 
   const handleWithdraw = async (token?: any) => {
     if (!walletClient || !ownerAddress) return;
@@ -113,7 +116,9 @@ export const VaultView = () => {
 
     try {
       setActionLoading(`Withdrawing ${name}...`); 
-      const client = await getSmartAccountClient(walletClient);
+      
+      // 👇 5. GUNAKAN UNIFIED CLIENT DISINI JUGA
+      const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
       if (!client.account) throw new Error("Account error");
 
       let callData: any;
@@ -142,6 +147,8 @@ export const VaultView = () => {
     } catch (e: any) { alert(`Failed: ${e.message}`); } finally { setActionLoading(null); }
   };
 
+  // ... (SISA KODE UI KE BAWAH SAMA PERSIS / TIDAK ADA PERUBAHAN) ...
+  
   const totalPages = Math.ceil(tokens.length / ITEMS_PER_PAGE);
   const currentTokens = tokens.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
@@ -214,7 +221,6 @@ export const VaultView = () => {
              )}
           </div>
           
-          {/* NOTICE IF NOT DEPLOYED */}
           {!isDeployed && (
              <div className="text-[10px] text-orange-400 text-center mt-2 bg-orange-900/20 p-2 rounded-lg border border-orange-500/20">
                ⚠️ Vault is not active yet. Please go to the tab <b>Blusukan</b> to activate .
@@ -230,7 +236,6 @@ export const VaultView = () => {
         </button>
       </div>
       
-      {/* ASSET LIST WITH PAGINATION */}
       <div className="space-y-2 min-h-[300px]">
         {tokens.length === 0 ? (
            <div className="text-center py-10 text-zinc-400 text-sm">Vault is empty.</div>
@@ -258,7 +263,6 @@ export const VaultView = () => {
         )}
       </div>
 
-      {/* PAGINATION CONTROLS */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-4 pt-4 border-t">
           <button 

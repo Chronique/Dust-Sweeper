@@ -2,38 +2,40 @@
 
 import { useEffect, useState } from "react";
 import { useWalletClient, useAccount } from "wagmi";
-import { getSmartAccountClient } from "~/lib/smart-account";
+// 👇 GANTI IMPORT KE SWITCHER
+import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher"; 
 import { alchemy } from "~/lib/alchemy";
-import { formatUnits, parseUnits, erc20Abi, type Address,encodeFunctionData } from "viem";
+import { formatUnits, parseUnits, erc20Abi, type Address, encodeFunctionData } from "viem";
 import { Refresh, ArrowRight, Check, Coins, Dollar, WarningCircle } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
-// ALAMAT 0x EXCHANGE PROXY (Router)
 const ZEROEX_ROUTER = "0xdef1c0ded9bec7f1a1670819833240f027b25eff";
 const WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-const ETH_ADDRESS = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"; // Simbol ETH Native di 0x
+const ETH_ADDRESS = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"; 
 
 export const SwapView = () => {
   const { data: walletClient } = useWalletClient();
-  const { address: ownerAddress } = useAccount();
+  // 👇 AMBIL CONNECTOR
+  const { address: ownerAddress, connector } = useAccount();
 
   const [tokens, setTokens] = useState<any[]>([]);
   const [selectedToken, setSelectedToken] = useState<any>(null);
   const [target, setTarget] = useState<"ETH" | "USDC">("ETH");
   
-  const [quoteData, setQuoteData] = useState<any>(null); // Menyimpan data respon dari 0x
+  const [quoteData, setQuoteData] = useState<any>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [swapping, setSwapping] = useState(false);
   const [toast, setToast] = useState<{ msg: string, type: "success" | "error" } | null>(null);
 
-  // 1. FETCH TOKENS (Sama seperti sebelumnya)
+  // 1. FETCH TOKENS
   const fetchVaultTokens = async () => {
     if (!walletClient) return;
     setLoading(true);
     try {
-      const client = await getSmartAccountClient(walletClient);
+      // 👇 UNIFIED CLIENT
+      const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
       const vaultAddress = client.account.address;
       
       const balances = await alchemy.core.getTokenBalances(vaultAddress);
@@ -68,9 +70,9 @@ export const SwapView = () => {
     }
   };
 
-  useEffect(() => { fetchVaultTokens(); }, [walletClient]);
+  useEffect(() => { fetchVaultTokens(); }, [walletClient, connector?.id]);
 
-  // 2. FETCH QUOTE DARI 0x (Lewat API Proxy kita)
+  // 2. FETCH QUOTE (SAMA)
   useEffect(() => {
     const getQuote = async () => {
       if (!selectedToken) {
@@ -83,16 +85,13 @@ export const SwapView = () => {
 
       try {
         const sellToken = selectedToken.contractAddress;
-        // Kalau target ETH, di 0x pakai address native symbol
         const buyToken = target === "ETH" ? ETH_ADDRESS : USDC_ADDRESS;
         const sellAmount = selectedToken.rawBalance;
 
-        // Panggil Internal API Route
         const res = await fetch(`/api/0x/quote?sellToken=${sellToken}&buyToken=${buyToken}&sellAmount=${sellAmount}`);
         const data = await res.json();
 
         if (data.code) {
-           // Error dari 0x (misal Insufficient liquidity)
            console.warn("0x Error:", data);
            setQuoteData(null);
         } else {
@@ -112,48 +111,39 @@ export const SwapView = () => {
 
   }, [selectedToken, target]);
 
-  // 3. EXECUTE SWAP (Pake Data dari 0x)
+  // 3. EXECUTE SWAP
   const handleSwap = async () => {
     if (!selectedToken || !quoteData || !walletClient) return;
     
     try {
       setSwapping(true);
-      const client = await getSmartAccountClient(walletClient);
+      // 👇 UNIFIED CLIENT
+      const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
       
-      // Data transaksi langsung dikasih sama 0x API!
-      // Kita tinggal kirim (approve dulu tentunya)
-      const txData = quoteData.data; // Calldata swap
-      const toAddress = quoteData.to; // Alamat Router 0x
-      const value = quoteData.value; // Value ETH (biasanya 0 kalau token)
+      const txData = quoteData.data; 
+      const toAddress = quoteData.to; 
+      const value = quoteData.value; 
 
       const hash = await client.sendUserOperation({
         account: client.account,
         calls: [
-          // 1. Approve Token ke 0x Router
+          // 1. Approve Token
           {
             to: selectedToken.contractAddress as Address,
             value: 0n,
-            data: {
-                abi: erc20Abi,
-                functionName: "approve",
-                args: [toAddress as Address, BigInt(selectedToken.rawBalance)]
-            } as any // Viem raw calldata trick if needed, or use encodeFunctionData
+            data: encodeFunctionData({
+               abi: erc20Abi,
+               functionName: "approve",
+               args: [toAddress as Address, BigInt(selectedToken.rawBalance)]
+            })
           },
-          // 2. Eksekusi Swap (Data dari 0x)
+          // 2. Eksekusi Swap
           {
             to: toAddress as Address,
             value: BigInt(value || 0),
             data: txData as `0x${string}`
           }
-        ].map(call => {
-            // Encode ulang approve biar aman (Viem style)
-            if (typeof call.data === 'object') {
-                const { abi, functionName, args } = call.data as any;
-                const { encodeFunctionData } = require("viem"); 
-                return { ...call, data: encodeFunctionData({ abi, functionName, args }) };
-            }
-            return call;
-        })
+        ]
       });
 
       console.log("Swap Hash:", hash);
@@ -173,6 +163,7 @@ export const SwapView = () => {
 
   return (
     <div className="pb-20 p-4 space-y-4">
+      {/* UI SAMA PERSIS */}
       <SimpleToast message={toast?.msg || null} type={toast?.type} onClose={() => setToast(null)} />
 
       <div className="flex items-center justify-between">
@@ -202,7 +193,7 @@ export const SwapView = () => {
       <div className="space-y-2">
         {tokens.length === 0 && !loading && (
           <div className="text-center py-10 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-400">
-             Vault is empty.
+              Vault is empty.
           </div>
         )}
         {tokens.map((token, i) => (
@@ -244,7 +235,6 @@ export const SwapView = () => {
             </div>
           </div>
           
-          {/* Info Sources (Optional: Bisa nampilin dia lewat Uniswap/Sushi dmn) */}
           {quoteData?.sources && (
              <div className="text-[10px] text-zinc-400 mb-4 flex flex-wrap gap-1">
                via: {quoteData.sources.filter((s: any) => parseFloat(s.proportion) > 0).map((s:any) => s.name).join(", ")}

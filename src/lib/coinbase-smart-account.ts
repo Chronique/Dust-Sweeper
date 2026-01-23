@@ -1,6 +1,6 @@
 import { createSmartAccountClient, type SmartAccountClient } from "permissionless";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
-import { createPublicClient, http, type WalletClient, type Transport, type Chain, type Hex } from "viem";
+import { createPublicClient, http, type WalletClient, type Transport, type Chain, type Hex, type LocalAccount } from "viem";
 import { baseSepolia } from "viem/chains"; 
 import { toCoinbaseSmartAccount, entryPoint06Address } from "viem/account-abstraction";
 import { toAccount } from "viem/accounts"; 
@@ -28,56 +28,62 @@ export const pimlicoClient = createPimlicoClient({
 });
 
 /**
- * HELPER: WRAPPER OWNER
- * Mengubah WalletClient (EOA) menjadi 'LocalAccount' palsu agar diterima oleh toCoinbaseSmartAccount.
+ * 🔥 BASE APP FIX: SMART WALLET WRAPPER
+ * Base App (Coinbase Wallet) tidak bisa Raw Sign.
+ * Wrapper ini memaksa Viem menggunakan 'signMessage' tapi tetap lolos validasi tipe 'LocalAccount'.
  */
-const getWrapperOwner = (walletClient: WalletClient) => {
+const getBaseAppSigner = (walletClient: WalletClient): LocalAccount => {
   if (!walletClient.account) throw new Error("Wallet not connected");
   
   const address = walletClient.account.address;
 
-  // Kita gunakan toAccount untuk membuat objek akun yang valid secara Tipe Data
+  // Kita buat Custom Account yang "Berbohong" punya fitur signTransaction
   return toAccount({
     address: address,
-    type: "local",     // 👈 Ini kunci agar TypeScript tidak error
-    source: "custom",
     
-    // Delegasi Sign Message ke Wallet Asli
+    // 👇 Mengaku sebagai Local Account
+    type: "local",      
+    source: "custom", 
+
+    // 1. SIGN MESSAGE (Ini yang ASLI dipakai Smart Wallet untuk otorisasi)
     async signMessage({ message }) {
+      console.log("✍️ [BaseApp Wrapper] Signing Message (EIP-191/1271)...");
       return walletClient.signMessage({ message, account: address });
     },
-    
-    // Delegasi Sign Typed Data ke Wallet Asli
+
+    // 2. SIGN TYPED DATA (Dipakai jika protokol butuh EIP-712)
     async signTypedData(typedData) {
+      console.log("✍️ [BaseApp Wrapper] Signing Typed Data...");
       return walletClient.signTypedData({ ...typedData, account: address } as any);
     },
-    
-    // Dummy Sign Transaction (Hanya untuk memuaskan TypeScript/Viem validation)
+
+    // 3. SIGN TRANSACTION (DUMMY / PALSU)
+    // 👇 Fungsi ini WAJIB ADA agar tidak error "does not support raw sign".
+    // Kita return string Hex sembarang karena Base App TIDAK AKAN PERNAH memanggil ini untuk UserOp.
     async signTransaction(transaction) {
+      console.warn("⚠️ [BaseApp Wrapper] Bypass: Dummy signTransaction dipanggil.");
       return "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as Hex;
     },
-  });
+  }) as LocalAccount;
 };
 
 // 3. COINBASE SMART ACCOUNT CLIENT
 export const getCoinbaseSmartAccountClient = async (walletClient: WalletClient) => {
-  if (!walletClient.account) {
-    throw new Error("Wallet tidak terdeteksi");
-  }
+  if (!walletClient.account) throw new Error("Wallet tidak terdeteksi");
 
-  // 🔥 GUNAKAN WRAPPER DI SINI
-  const wrappedOwner = getWrapperOwner(walletClient);
+  // A. GUNAKAN WRAPPER KHUSUS BASE APP
+  const smartWalletSigner = getBaseAppSigner(walletClient);
+  
+  console.log("🔍 Using BaseApp Signer Wrapper:", smartWalletSigner.type); 
 
-  // A. Setup Coinbase Account
+  // B. Setup Coinbase Account
   const coinbaseAccount = await toCoinbaseSmartAccount({
     client: publicClient,
-    owners: [wrappedOwner],
-    
-    // 🔥 WAJIB ADA: Versi Logic Coinbase Smart Wallet
+    owners: [smartWalletSigner], // 👈 Masukkan signer palsu
     version: "1.1", 
   });
 
-  // B. Setup Executor
+  // C. Setup Executor
   return createSmartAccountClient({
     account: coinbaseAccount,
     chain: baseSepolia,

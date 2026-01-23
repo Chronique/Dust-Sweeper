@@ -2,15 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useAccount, useWriteContract, useWalletClient } from "wagmi";
-// 👇 PASTIKAN INI MENGARAH KE FILE SIMPLE ACCOUNT YG BARU KITA BUAT
+// 👇 IMPORT PENTING UNTUK BATCH TRANSACTION (Coinbase)
+import { useSendCalls } from "wagmi"; 
+
 import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher";
-import { publicClient } from "~/lib/simple-smart-account"; // Public client bisa pinjam dr mana aja
+import { publicClient } from "~/lib/simple-smart-account"; 
 import { fetchMoralisTokens } from "~/lib/moralis-data";
-import { formatUnits, erc20Abi, type Address, formatEther } from "viem";
+import { formatUnits, erc20Abi, type Address, formatEther, encodeFunctionData } from "viem";
 import { Copy, Wallet, CheckCircle, Circle, NavArrowLeft, NavArrowRight, ArrowUp, Rocket, Check, WarningTriangle } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
-// Interface Token
 interface TokenData {
   contractAddress: string;
   name: string;
@@ -25,6 +26,9 @@ export const DustDepositView = () => {
   const { address: ownerAddress, connector } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { writeContractAsync } = useWriteContract();
+  
+  // 👇 HOOK KHUSUS BATCH TRANSACTION (EIP-5792)
+  const { sendCallsAsync } = useSendCalls(); 
 
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
   const [vaultEthBalance, setVaultEthBalance] = useState<bigint>(0n);
@@ -41,8 +45,7 @@ export const DustDepositView = () => {
   
   const [toast, setToast] = useState<{ msg: string, type: "success" | "error" } | null>(null);
   
-
-  // 1. INIT VAULT & CHECK STATUS
+  // 1. INIT VAULT
   const checkVaultStatus = async () => {
       if (!walletClient) return;
       try {
@@ -63,18 +66,13 @@ export const DustDepositView = () => {
 
   useEffect(() => {
     checkVaultStatus();
-    // Cek status setiap 5 detik
     const interval = setInterval(checkVaultStatus, 5000);
     return () => clearInterval(interval);
-  }, [walletClient]);
+  }, [walletClient, connector?.id]);
 
-  // 2. ACTIVATION LOGIC (SPONSORED BY PIMLICO)
+  // 🔥 2. FUNGSI AKTIVASI (INI YANG TADI HILANG)
   const handleActivate = async () => {
     if (!walletClient || !vaultAddress) return;
-    
-    // ❌ KITA HAPUS PENGECEKAN SALDO DI SINI
-    // Karena pakai Paymaster, saldo 0 pun BISA activate (Gratis).
-    
     setActivating(true);
     try {
       const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
@@ -102,7 +100,7 @@ export const DustDepositView = () => {
     }
   };
 
-  // 3. SCAN WALLET (MORALIS)
+  // 3. SCAN WALLET
   const scanOwnerWallet = async () => {
       if (!ownerAddress) return;
       setLoading(true);
@@ -155,43 +153,70 @@ export const DustDepositView = () => {
     setSelectedTokens(newSet);
   };
 
-  // 4. DEPOSIT LOGIC (WAGMI STANDARD - AMAN DARI RAW SIGN)
+  // 🔥 4. HYBRID DEPOSIT LOGIC (BATCH vs LOOP)
   const handleDeposit = async () => {
     if (!vaultAddress) return;
     setDepositStatus("Preparing Deposit...");
 
-    for (const tokenAddr of selectedTokens) {
-      const token = tokens.find(t => t.contractAddress === tokenAddr);
-      if (!token) continue;
-      try {
-        setDepositStatus(`Depositing ${token.symbol}...`);
+    const isCoinbaseWallet = connector?.id === 'coinbaseWalletSDK';
+
+    try {
+      // --- JALUR A: COINBASE (BATCH TRANSACTION) ---
+      if (isCoinbaseWallet) {
+        setDepositStatus(`Batching ${selectedTokens.size} assets...`);
         
-        // Ini pakai wallet asli user (MetaMask) -> Standard Transaction
-        await writeContractAsync({
-          address: tokenAddr as Address,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [vaultAddress as Address, BigInt(token.rawBalance)],
-        });
-        
-      } catch (e) {
-        setDepositStatus(null);
-        setToast({ msg: "Deposit Failed/Cancelled", type: "error" });
-        return; 
+        const calls = Array.from(selectedTokens).map(tokenAddr => {
+            const token = tokens.find(t => t.contractAddress === tokenAddr);
+            if (!token) return null;
+            
+            return {
+                to: tokenAddr as Address,
+                data: encodeFunctionData({
+                    abi: erc20Abi,
+                    functionName: 'transfer',
+                    args: [vaultAddress as Address, BigInt(token.rawBalance)]
+                }),
+                value: 0n
+            };
+        }).filter(Boolean) as any[];
+
+        await sendCallsAsync({ calls });
+        setDepositStatus("Batch Transaction Sent!");
+      } 
+      
+      // --- JALUR B: EOA (LOOPING) ---
+      else {
+        for (const tokenAddr of selectedTokens) {
+            const token = tokens.find(t => t.contractAddress === tokenAddr);
+            if (!token) continue;
+            
+            setDepositStatus(`Depositing ${token.symbol}...`);
+            await writeContractAsync({
+                address: tokenAddr as Address,
+                abi: erc20Abi,
+                functionName: "transfer",
+                args: [vaultAddress as Address, BigInt(token.rawBalance)],
+            });
+        }
       }
+
+      setDepositStatus("Confirming...");
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      setDepositStatus("Refreshing Data...");
+      await scanOwnerWallet();
+      setSelectedTokens(new Set());
+      setDepositStatus(null);
+      setToast({ msg: "Deposit Successful! 🧹", type: "success" });
+
+    } catch (e: any) {
+      console.error(e);
+      setDepositStatus(null);
+      setToast({ msg: "Deposit Failed/Cancelled", type: "error" });
     }
-    setDepositStatus("Confirming...");
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    setDepositStatus("Refreshing Data...");
-    await scanOwnerWallet();
-    setSelectedTokens(new Set());
-    setDepositStatus(null);
-    setToast({ msg: "Deposit Successful! 🧹", type: "success" });
   };
 
   return (
     <div className="pb-24 relative min-h-[50vh]">
-      
       <SimpleToast message={toast?.msg || null} type={toast?.type} onClose={() => setToast(null)} />
 
       {/* LOADING OVERLAY */}
@@ -206,7 +231,6 @@ export const DustDepositView = () => {
 
       {/* HEADER: VAULT INFO */}
       <div className="p-5 bg-gradient-to-br from-zinc-900 to-zinc-800 text-white rounded-2xl shadow-lg mb-6 relative overflow-hidden">
-        
         <div className={`absolute top-4 right-4 text-[10px] px-2 py-1 rounded-full border font-medium flex items-center gap-1 ${isDeployed ? "bg-green-500/20 border-green-500 text-green-400" : "bg-orange-500/20 border-orange-500 text-orange-400"}`}>
            {isDeployed ? <Check className="w-3 h-3" /> : <Rocket className="w-3 h-3" />}
            {isDeployed ? "Active" : "Undeployed"}
@@ -229,8 +253,9 @@ export const DustDepositView = () => {
           </button>
         </div>
         
-        {/* BUTTON AKTIVASI (Tanpa Warning Saldo karena Sponsored) */}
-        {!isDeployed && vaultAddress && (
+        {/* 🔥🔥 INI POSISI YANG BENAR UNTUK TOMBOL AKTIVASI 🔥🔥 */}
+        {/* Hanya tampilkan tombol ini jika BELUM Deployed DAN BUKAN Coinbase Wallet */}
+        {!isDeployed && vaultAddress && connector?.id !== 'coinbaseWalletSDK' && (
           <div className="mt-2 pt-4 border-t border-white/10">
               <button 
                 onClick={handleActivate}
@@ -243,9 +268,21 @@ export const DustDepositView = () => {
               <p className="text-[10px] text-center text-zinc-400 mt-2">Gas fees sponsored by Pimlico Paymaster</p>
           </div>
         )}
+
+        {/* Pesan khusus untuk Coinbase User */}
+        {!isDeployed && vaultAddress && connector?.id === 'coinbaseWalletSDK' && (
+           <div className="mt-2 pt-4 border-t border-white/10 text-center">
+              <div className="text-xs text-green-400 bg-green-500/10 p-2 rounded-lg border border-green-500/20 flex items-center justify-center gap-2">
+                 <Check className="w-4 h-4" /> Vault Ready for Deposit
+              </div>
+              <p className="text-[10px] text-zinc-500 mt-2">
+                 Vault will auto-deploy on your first Withdraw. No activation needed.
+              </p>
+           </div>
+        )}
       </div>
 
-      {/* TOKEN LIST & PAGINATION (SAMA SEPERTI KODE ANDA) */}
+      {/* TOKEN LIST */}
       <div className="flex items-end justify-between mb-3 px-1">
         <div>
            <h3 className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
@@ -306,6 +343,7 @@ export const DustDepositView = () => {
         </div>
       )}
 
+      {/* PAGINATION */}
       {totalPages > 1 && (
         <div className="flex justify-center items-center gap-4 mt-6">
           <button 
