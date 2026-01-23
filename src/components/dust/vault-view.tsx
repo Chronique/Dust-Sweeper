@@ -2,17 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useWalletClient, useAccount } from "wagmi";
-// 👇 1. GANTI IMPORT: Pakai Switcher
 import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher"; 
-import { publicClient } from "~/lib/simple-smart-account"; // Pinjam publicClient dari sini
+import { publicClient } from "~/lib/simple-smart-account"; 
 import { alchemy } from "~/lib/alchemy";
 import { formatEther, formatUnits, encodeFunctionData, erc20Abi, type Address } from "viem";
-import { Copy, Wallet, Rocket, Check, Dollar, NavArrowLeft, NavArrowRight, Refresh } from "iconoir-react";
+import { Copy, Wallet, Rocket, Check, Dollar, NavArrowLeft, NavArrowRight, Refresh, WarningCircle, Gas } from "iconoir-react";
+import { SimpleToast } from "~/components/ui/simple-toast";
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const ITEMS_PER_PAGE = 5; 
 
-// --- KOMPONEN LOGO (SAMA) ---
+// --- KOMPONEN LOGO ---
 const TokenLogo = ({ token }: { token: any }) => {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => { setSrc(token.logo || null); }, [token]);
@@ -41,7 +41,6 @@ const TokenLogo = ({ token }: { token: any }) => {
 
 export const VaultView = () => {
   const { data: walletClient } = useWalletClient();
-  // 👇 2. AMBIL CONNECTOR (Penting untuk deteksi Coinbase)
   const { address: ownerAddress, connector } = useAccount(); 
   
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
@@ -52,6 +51,7 @@ export const VaultView = () => {
   const [isDeployed, setIsDeployed] = useState(false);
   const [loading, setLoading] = useState(false); 
   const [actionLoading, setActionLoading] = useState<string | null>(null); 
+  const [toast, setToast] = useState<{ msg: string, type: "success" | "error" } | null>(null);
   
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -59,7 +59,6 @@ export const VaultView = () => {
     if (!walletClient) return;
     setLoading(true);
     try {
-      // 👇 3. GUNAKAN UNIFIED CLIENT + CONNECTOR ID
       const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
       if (!client.account) return;
 
@@ -107,26 +106,28 @@ export const VaultView = () => {
 
   useEffect(() => {
     fetchVaultData();
-  }, [walletClient, connector?.id]); // 👇 4. Update dependency agar reload saat wallet ganti
+  }, [walletClient, connector?.id]); 
 
   const handleWithdraw = async (token?: any) => {
     if (!walletClient || !ownerAddress) return;
     const name = !token ? "ETH" : token.symbol;
+    
+    // Safety check just in case, though button is removed for ETH
+    if (!token) {
+        alert("ETH withdrawal is disabled here to preserve gas.");
+        return;
+    }
+
     if (!window.confirm(`Withdraw ${name} to main wallet?`)) return;
 
     try {
       setActionLoading(`Withdrawing ${name}...`); 
       
-      // 👇 5. GUNAKAN UNIFIED CLIENT DISINI JUGA
       const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
       if (!client.account) throw new Error("Account error");
 
-      let callData: any;
-      if (!token) {
-        const balance = await publicClient.getBalance({ address: client.account.address });
-        callData = { to: ownerAddress, value: balance, data: "0x" };
-      } else {
-        callData = {
+      // Logic khusus ERC20 (USDC/Tokens)
+      const callData = {
           to: token.contractAddress as Address,
           value: 0n,
           data: encodeFunctionData({
@@ -134,20 +135,21 @@ export const VaultView = () => {
             functionName: "transfer",
             args: [ownerAddress, token.rawBalance]
           })
-        };
-      }
+      };
 
       await client.sendUserOperation({
         account: client.account,
         calls: [callData]
       });
 
+      setToast({ msg: "Withdraw Successful! 💸", type: "success" });
       await new Promise(resolve => setTimeout(resolve, 5000));
       await fetchVaultData();
-    } catch (e: any) { alert(`Failed: ${e.message}`); } finally { setActionLoading(null); }
+    } catch (e: any) { 
+        console.error(e);
+        setToast({ msg: "Failed: " + e.shortMessage || e.message, type: "error" });
+    } finally { setActionLoading(null); }
   };
-
-  // ... (SISA KODE UI KE BAWAH SAMA PERSIS / TIDAK ADA PERUBAHAN) ...
   
   const totalPages = Math.ceil(tokens.length / ITEMS_PER_PAGE);
   const currentTokens = tokens.slice(
@@ -157,6 +159,8 @@ export const VaultView = () => {
 
   return (
     <div className="pb-20 space-y-4 relative min-h-[50vh]">
+      <SimpleToast message={toast?.msg || null} type={toast?.type} onClose={() => setToast(null)} />
+
       {actionLoading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
@@ -185,17 +189,22 @@ export const VaultView = () => {
 
         {/* --- WITHDRAW SECTION --- */}
         <div className="mt-4 space-y-3">
-          {/* 1. ETH WITHDRAW */}
+          
+          {/* 1. ETH BALANCE (No Withdraw Button) */}
           <div className="flex items-center justify-between bg-zinc-800/50 p-3 rounded-xl border border-zinc-700/50">
-             <div>
-                <div className="text-xs text-zinc-400">ETH Balance</div>
-                <div className="text-lg font-bold">{parseFloat(ethBalance).toFixed(5)}</div>
+             <div className="flex items-center gap-3">
+                 <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-400">
+                    <Gas className="w-5 h-5" />
+                 </div>
+                 <div>
+                    <div className="text-xs text-zinc-400">Gas Reserve (ETH)</div>
+                    <div className="text-lg font-bold">{parseFloat(ethBalance).toFixed(5)}</div>
+                 </div>
              </div>
-             {isDeployed && parseFloat(ethBalance) > 0.00001 && (
-                <button onClick={() => handleWithdraw()} className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-xs font-medium transition-all">
-                  Withdraw
-                </button>
-             )}
+             {/* Badge Info */}
+             <div className="text-[10px] bg-zinc-800 text-zinc-500 px-2 py-1 rounded-lg border border-zinc-700">
+                Auto-used for Gas
+             </div>
           </div>
 
           {/* 2. USDC WITHDRAW */}
@@ -211,19 +220,22 @@ export const VaultView = () => {
                   </div>
                 </div>
              </div>
-             {isDeployed && usdcBalance && parseFloat(usdcBalance.formattedBal) > 0 && (
+             
+             {usdcBalance && parseFloat(usdcBalance.formattedBal) > 0 && (
                 <button 
                   onClick={() => handleWithdraw(usdcBalance)} 
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shadow-lg shadow-blue-900/20 transition-all"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shadow-lg shadow-blue-900/20 transition-all flex items-center gap-1"
                 >
                   Withdraw
                 </button>
              )}
           </div>
           
-          {!isDeployed && (
-             <div className="text-[10px] text-orange-400 text-center mt-2 bg-orange-900/20 p-2 rounded-lg border border-orange-500/20">
-               ⚠️ Vault is not active yet. Please go to the tab <b>Blusukan</b> to activate .
+          {/* NOTICE */}
+          {!isDeployed && parseFloat(ethBalance) === 0 && (
+             <div className="text-[10px] text-zinc-400 text-center mt-2 bg-zinc-800/50 p-2 rounded-lg border border-zinc-700/50 flex items-center justify-center gap-2">
+               <WarningCircle className="w-3 h-3 text-orange-400" />
+               Vault is empty. Deposit funds to start.
              </div>
           )}
         </div>
@@ -251,10 +263,10 @@ export const VaultView = () => {
                         <div className="text-xs text-zinc-500">{token.formattedBal}</div>
                     </div>
                 </div>
+                
                 <button 
                   onClick={() => handleWithdraw(token)}
-                  disabled={!isDeployed}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${!isDeployed ? "bg-zinc-100 text-zinc-400" : "text-blue-600 bg-blue-50 hover:bg-blue-100"}`}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors text-blue-600 bg-blue-50 hover:bg-blue-100`}
                 >
                   WD
                 </button>
