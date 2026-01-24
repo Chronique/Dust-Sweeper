@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWalletClient, useAccount } from "wagmi";
+import { useWalletClient, useAccount, useWriteContract, useSwitchChain } from "wagmi";
 import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher"; 
 import { publicClient } from "~/lib/simple-smart-account"; 
 import { alchemy } from "~/lib/alchemy";
 import { formatEther, formatUnits, encodeFunctionData, erc20Abi, type Address } from "viem";
+import { baseSepolia } from "viem/chains"; // 👈 Force Chain ID
 import { Copy, Wallet, Rocket, Check, Dollar, NavArrowLeft, NavArrowRight, Refresh, WarningCircle, Gas } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
-const USDC_ADDRESS = "0x54287C56A7545A42A5d0Bef23Aff3e9813eB6422";
-
+const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // Ganti dengan MockUSDC jika perlu
 const ITEMS_PER_PAGE = 5; 
 
 // --- KOMPONEN LOGO ---
@@ -42,7 +42,9 @@ const TokenLogo = ({ token }: { token: any }) => {
 
 export const VaultView = () => {
   const { data: walletClient } = useWalletClient();
-  const { address: ownerAddress, connector } = useAccount(); 
+  const { address: ownerAddress, connector, chainId } = useAccount(); 
+  const { writeContractAsync } = useWriteContract(); // 👈 Pakai ini untuk Direct Tx
+  const { switchChainAsync } = useSwitchChain();     // 👈 Pakai ini untuk pindah network
   
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
   const [ethBalance, setEthBalance] = useState("0");
@@ -72,6 +74,7 @@ export const VaultView = () => {
       const code = await publicClient.getBytecode({ address });
       setIsDeployed(code !== undefined && code !== null && code !== "0x");
 
+      // Fetch Token Balances via Alchemy
       const balances = await alchemy.core.getTokenBalances(address);
       const nonZeroTokens = balances.tokenBalances.filter(t => 
           t.tokenBalance && BigInt(t.tokenBalance) > 0n
@@ -109,11 +112,24 @@ export const VaultView = () => {
     fetchVaultData();
   }, [walletClient, connector?.id]); 
 
+  // HELPER: FORCE SEPOLIA
+  const ensureSepolia = async () => {
+      if (chainId !== baseSepolia.id) {
+          try {
+              await switchChainAsync({ chainId: baseSepolia.id });
+          } catch (e) {
+              setToast({ msg: "Switch to Base Sepolia first!", type: "error" });
+              throw new Error("Wrong Network");
+          }
+      }
+  };
+
+  // 🔥 DIRECT WITHDRAW LOGIC (USDC/ERC20)
   const handleWithdraw = async (token?: any) => {
-    if (!walletClient || !ownerAddress) return;
+    if (!walletClient || !ownerAddress || !vaultAddress) return;
     const name = !token ? "ETH" : token.symbol;
     
-    // Safety check just in case, though button is removed for ETH
+    // Safety check: ETH withdraw disabled here
     if (!token) {
         alert("ETH withdrawal is disabled here to preserve gas.");
         return;
@@ -122,33 +138,53 @@ export const VaultView = () => {
     if (!window.confirm(`Withdraw ${name} to main wallet?`)) return;
 
     try {
+      await ensureSepolia(); // 1. Cek Network
       setActionLoading(`Withdrawing ${name}...`); 
       
-      const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
-      if (!client.account) throw new Error("Account error");
-
-      // Logic khusus ERC20 (USDC/Tokens)
-      const callData = {
-          to: token.contractAddress as Address,
-          value: 0n,
-          data: encodeFunctionData({
-            abi: erc20Abi,
-            functionName: "transfer",
-            args: [ownerAddress, token.rawBalance]
-          })
-      };
-
-      await client.sendUserOperation({
-        account: client.account,
-        calls: [callData]
+      // 2. Siapkan Data Transfer ERC20 (Internal Call)
+      // Ini perintah: "Transfer X token ke Owner"
+      const transferData = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [ownerAddress as Address, BigInt(token.rawBalance)]
       });
 
+      // 3. Siapkan ABI Execute Smart Account (External Call)
+      const executeAbi = [{
+        type: 'function',
+        name: 'execute',
+        inputs: [
+            { name: 'target', type: 'address' },
+            { name: 'value', type: 'uint256' },
+            { name: 'data', type: 'bytes' }
+        ],
+        outputs: [],
+        stateMutability: 'payable'
+      }] as const;
+
+      // 4. Kirim Transaksi Langsung (Owner Bayar Gas)
+      // Kita suruh Vault (address) untuk execute perintah transfer tadi.
+      const txHash = await writeContractAsync({
+          address: vaultAddress as Address,
+          abi: executeAbi,
+          functionName: 'execute',
+          args: [
+              token.contractAddress as Address, // Target: Kontrak Token (USDC)
+              0n,                               // Value: 0 ETH
+              transferData                      // Data: Perintah Transfer ERC20
+          ],
+          chainId: baseSepolia.id               // Force Sepolia
+      });
+
+      console.log("Withdraw Hash:", txHash);
       setToast({ msg: "Withdraw Successful! 💸", type: "success" });
+      
       await new Promise(resolve => setTimeout(resolve, 5000));
       await fetchVaultData();
+
     } catch (e: any) { 
         console.error(e);
-        setToast({ msg: "Failed: " + e.shortMessage || e.message, type: "error" });
+        setToast({ msg: "Failed: " + (e.shortMessage || e.message), type: "error" });
     } finally { setActionLoading(null); }
   };
   
