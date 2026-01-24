@@ -9,7 +9,8 @@ import { formatEther, formatUnits, encodeFunctionData, erc20Abi, type Address } 
 import { Copy, Wallet, Rocket, Check, Dollar, NavArrowLeft, NavArrowRight, Refresh, WarningCircle, Gas } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
-const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const USDC_ADDRESS = "0x54287C56A7545A42A5d0Bef23Aff3e9813eB6422";
+
 const ITEMS_PER_PAGE = 5; 
 
 // --- KOMPONEN LOGO ---
