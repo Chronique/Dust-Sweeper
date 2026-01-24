@@ -10,7 +10,7 @@ import { baseSepolia } from "viem/chains"; // 👈 Force Chain ID
 import { Copy, Wallet, Rocket, Check, Dollar, NavArrowLeft, NavArrowRight, Refresh, WarningCircle, Gas } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
-const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // Ganti dengan MockUSDC jika perlu
+const USDC_ADDRESS = "0xdBe1e97FB92E6511351FB8d01B0521ea9135Af12"; // Ganti dengan MockUSDC jika perlu
 const ITEMS_PER_PAGE = 5; 
 
 // --- KOMPONEN LOGO ---
