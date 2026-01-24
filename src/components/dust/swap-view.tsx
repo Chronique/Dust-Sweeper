@@ -10,10 +10,10 @@ import { baseSepolia } from "viem/chains";
 import { Copy, Wallet, Refresh, Flash, ArrowRight, WarningCircle, Check, CheckCircle } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
-// ✅ ALAMAT SWAPPER (MOCK DUST SWAPPER)
+// ✅ ALAMAT SWAPPER ANDA
 const SWAPPER_ADDRESS = "0xdBe1e97FB92E6511351FB8d01B0521ea9135Af12"; 
 
-const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // MockUSDC di Sepolia
+const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // MockUSDC
 
 // --- KOMPONEN LOGO ---
 const TokenLogo = ({ token }: { token: any }) => {
@@ -42,11 +42,12 @@ const TokenLogo = ({ token }: { token: any }) => {
 
 export const SwapView = () => {
   const { data: walletClient } = useWalletClient();
-  const { connector, chainId } = useAccount(); 
+  const { address: ownerAddress, connector, chainId } = useAccount(); 
   const { writeContractAsync } = useWriteContract();
   const { switchChainAsync } = useSwitchChain();
   
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
+  const [isDeployed, setIsDeployed] = useState(false); // Tambah state deploy check
   const [tokens, setTokens] = useState<any[]>([]);
   const [loading, setLoading] = useState(false); 
   const [actionLoading, setActionLoading] = useState<string | null>(null); 
@@ -54,7 +55,7 @@ export const SwapView = () => {
 
   const [selectedTokens, setSelectedTokens] = useState<Set<string>>(new Set());
 
-  // 1. FETCH DATA VAULT
+  // 1. FETCH DATA VAULT & STATUS DEPLOY
   const fetchVaultData = async () => {
     if (!walletClient) return;
     setLoading(true);
@@ -64,6 +65,11 @@ export const SwapView = () => {
 
       const address = client.account.address;
       setVaultAddress(address);
+
+      // Cek apakah sudah deploy?
+      const code = await publicClient.getBytecode({ address });
+      const deployed = code !== undefined && code !== null && code !== "0x";
+      setIsDeployed(deployed);
 
       const balances = await alchemy.core.getTokenBalances(address);
       const nonZeroTokens = balances.tokenBalances.filter(t => 
@@ -117,23 +123,27 @@ export const SwapView = () => {
   const handleBatchSwap = async () => {
     if (!vaultAddress || selectedTokens.size === 0) return;
     
-    if (!window.confirm(`Batch Swap ${selectedTokens.size} assets?\n\nThis will confirm 1 transaction to Approve & Swap all selected tokens.`)) return;
+    // SAFETY CHECK: VAULT MUST BE ACTIVE
+    if (!isDeployed) {
+        alert("⚠️ VAULT BELUM AKTIF!\n\nFitur Batch Swap butuh Smart Contract yang sudah aktif.\nSilakan ke Tab 'Deposit' dan klik tombol Activate dulu.");
+        return;
+    }
+
+    if (!window.confirm(`Batch Swap ${selectedTokens.size} assets?`)) return;
 
     try {
         if (chainId !== baseSepolia.id) await switchChainAsync({ chainId: baseSepolia.id });
-        setActionLoading("Preparing Bundle...");
+        setActionLoading("Simulating Transaction...");
 
-        // ARRAY UNTUK MENAMPUNG SEMUA PERINTAH
         const dests: Address[] = [];
         const values: bigint[] = [];
         const funcs: `0x${string}`[] = [];
 
-        // LOOPING TOKEN YANG DIPILIH
         for (const addr of selectedTokens) {
             const token = tokens.find(t => t.contractAddress === addr);
             if (!token) continue;
 
-            // 1. MASUKKAN PERINTAH APPROVE KE ANTRIAN
+            // 1. APPROVE
             dests.push(token.contractAddress as Address);
             values.push(0n);
             funcs.push(encodeFunctionData({
@@ -142,7 +152,7 @@ export const SwapView = () => {
                 args: [SWAPPER_ADDRESS as Address, BigInt(token.rawBalance)]
             }));
 
-            // 2. MASUKKAN PERINTAH SWAP KE ANTRIAN
+            // 2. SWAP
             const swapperAbi = [{
                 name: "swapTokenForETH",
                 type: "function",
@@ -160,9 +170,6 @@ export const SwapView = () => {
             }));
         }
 
-        setActionLoading(`Signing 1 Bundle (${funcs.length} Actions)...`);
-
-        // ABI executeBatch (Standar SimpleAccount)
         const batchAbi = [{
             type: 'function',
             name: 'executeBatch',
@@ -175,7 +182,33 @@ export const SwapView = () => {
             stateMutability: 'payable'
         }] as const;
 
-        // 🔥 FIRE ONE SHOT!
+        // 🔥 STEP 1: SIMULATE (PENTING BIAR GAK GHOSTING)
+        // Kita simulasikan dulu di level node. Kalau ini gagal, berarti ada error logic.
+        // Kalau sukses, baru kita kirim beneran.
+        try {
+            await publicClient.simulateContract({
+                address: vaultAddress as Address,
+                abi: batchAbi,
+                functionName: 'executeBatch',
+                args: [dests, values, funcs],
+                account: ownerAddress as Address,
+            });
+        } catch (simError: any) {
+            console.error("Simulation Error:", simError);
+            // Coba tangkap pesan error yang manusiawi
+            let msg = "Transaction Simulation Failed.";
+            if (simError.message.includes("transfer amount exceeds balance")) msg = "Error: Token Balance Insufficient";
+            else if (simError.message.includes("Swapper kehabisan ETH")) msg = "Error: Swapper Contract Out of ETH";
+            else msg = "Error: " + (simError.shortMessage || simError.message);
+            
+            setToast({ msg: msg, type: "error" });
+            setActionLoading(null);
+            return; // Stop disini kalau simulasi gagal
+        }
+
+        setActionLoading(`Signing Bundle...`);
+
+        // 🔥 STEP 2: EXECUTE REAL
         const txHash = await writeContractAsync({
             address: vaultAddress as Address,
             abi: batchAbi,
@@ -185,29 +218,21 @@ export const SwapView = () => {
         });
 
         console.log("Batch Hash:", txHash);
-        setToast({ msg: "Batch Swap Submitted! 🚀", type: "success" });
-        setActionLoading("Cleaning up UI...");
-
-        // --- OPTIMISTIC UPDATE (KUNCI FIX NYA) ---
-        // 1. Simpan dulu ID token yang mau dihapus
-        const tokensToRemove = new Set(selectedTokens);
         
-        // 2. Hapus token dari State 'tokens' secara manual (Tanpa nunggu Alchemy)
-        setTokens(prevTokens => prevTokens.filter(t => !tokensToRemove.has(t.contractAddress)));
-        
-        // 3. Reset seleksi
+        // Optimistic Update
+        setTokens(prev => prev.filter(t => !selectedTokens.has(t.contractAddress)));
         setSelectedTokens(new Set()); 
-
-        // ❌ JANGAN PANGGIL fetchVaultData() DISINI!
-        // Biarkan user manual refresh nanti kalau mau, biar token gak muncul lagi gara2 Alchemy lemot.
         
+        setToast({ msg: "Batch Swap Submitted! 🚀", type: "success" });
+        setActionLoading("Waiting for Block...");
+
+        await new Promise(r => setTimeout(r, 8000));
+        // fetchVaultData(); // Opsional: Matikan ini biar gak 'muncul lagi' kalau alchemy lemot
+
     } catch (e: any) {
         console.error(e);
-        if (e.message?.includes("function selector")) {
-            setToast({ msg: "Smart Account version too old for batching.", type: "error" });
-        } else {
-            setToast({ msg: "Failed: " + (e.shortMessage || e.message), type: "error" });
-        }
+        setToast({ msg: "Failed: " + (e.shortMessage || e.message), type: "error" });
+        fetchVaultData();
     } finally {
         setActionLoading(null);
     }
@@ -217,19 +242,24 @@ export const SwapView = () => {
     <div className="pb-32 relative min-h-[50vh]">
       <SimpleToast message={toast?.msg || null} type={toast?.type} onClose={() => setToast(null)} />
 
-      {/* LOADING OVERLAY */}
       {actionLoading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
               <div className="w-10 h-10 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
               <div className="text-sm font-bold text-center animate-pulse text-yellow-500">{actionLoading}</div>
-              <div className="text-xs text-zinc-500">Confirm transaction in wallet</div>
            </div>
         </div>
       )}
 
       {/* HEADER */}
       <div className="p-5 bg-gradient-to-br from-yellow-900 to-amber-900 text-white rounded-2xl shadow-lg mb-6 relative overflow-hidden">
+        
+        {/* STATUS VAULT CHECKER */}
+        <div className={`absolute top-4 right-4 text-[10px] px-2 py-1 rounded-full border font-medium flex items-center gap-1 ${isDeployed ? "bg-green-500/20 border-green-500 text-green-400" : "bg-red-500/20 border-red-500 text-red-400"}`}>
+           {isDeployed ? <Check className="w-3 h-3" /> : <WarningCircle className="w-3 h-3" />}
+           {isDeployed ? "Ready" : "Not Active"}
+        </div>
+
         <div className="flex items-center gap-2 text-yellow-200 text-xs mb-1">
           <Flash className="w-3 h-3" /> Dust Sweeper
         </div>
@@ -312,23 +342,14 @@ export const SwapView = () => {
           <div className="fixed bottom-24 left-4 right-4 z-40 animate-in slide-in-from-bottom-5">
             <button 
                 onClick={handleBatchSwap}
-                className="w-full bg-yellow-500 hover:bg-yellow-600 text-white shadow-xl shadow-yellow-500/30 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 transition-transform active:scale-95"
+                disabled={!isDeployed}
+                className={`w-full text-white shadow-xl shadow-yellow-500/30 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 transition-transform active:scale-95 ${isDeployed ? "bg-yellow-500 hover:bg-yellow-600" : "bg-zinc-400 cursor-not-allowed"}`}
             >
                 <Flash className="w-5 h-5" />
-                Batch Swap {selectedTokens.size} Assets
+                {isDeployed ? `Batch Swap ${selectedTokens.size} Assets` : "Vault Not Active (Check Deposit Tab)"}
             </button>
-            <div className="text-[10px] text-center mt-2 text-zinc-500 font-medium">
-                1 Bundle Transaction • Includes {selectedTokens.size * 2} Actions
-            </div>
           </div>
       )}
-
-      <div className="mt-20 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl flex gap-3 items-start">
-         <WarningCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-         <div className="text-xs text-blue-800 dark:text-blue-200">
-            <strong>Batch Power:</strong> This bundles Approvals and Swaps into a single transaction. UI updates instantly, ignoring network lag.
-         </div>
-      </div>
     </div>
   );
 };
