@@ -25,7 +25,7 @@ export const fetchTokenPrices = async (contractAddresses: string[]) => {
 
     return prices;
   } catch (error) {
-    console.error("Gagal ambil harga dari GeckoTerminal:", error);
+    console.error("Failed to get price from GeckoTerminal:", error);
     return {};
   }
 };

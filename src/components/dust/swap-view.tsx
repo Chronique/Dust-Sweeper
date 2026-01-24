@@ -64,7 +64,7 @@ export const SwapView = () => {
       setTokens(formatted);
     } catch (e) { 
       console.error(e); 
-      setToast({ msg: "Gagal scan vault.", type: "error" });
+      setToast({ msg: "Failed scan vault.", type: "error" });
     } finally { 
       setLoading(false); 
     }
@@ -155,7 +155,7 @@ export const SwapView = () => {
 
     } catch (e: any) {
       console.error(e);
-      setToast({ msg: "Swap Gagal: " + (e.shortMessage || "Error"), type: "error" });
+      setToast({ msg: "Swap Failed: " + (e.shortMessage || "Error"), type: "error" });
     } finally {
       setSwapping(false);
     }

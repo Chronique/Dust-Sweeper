@@ -15,7 +15,7 @@ export const publicClient = createPublicClient({
 
 // 2. PIMLICO CLIENT
 const pimlicoApiKey = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
-if (!pimlicoApiKey) throw new Error("❌ API Key Pimlico hilang!");
+if (!pimlicoApiKey) throw new Error("❌ Pimlico API Key lost!");
 
 const PIMLICO_URL = `https://api.pimlico.io/v2/84532/rpc?apikey=${pimlicoApiKey}`;
 
