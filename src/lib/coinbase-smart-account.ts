@@ -1,19 +1,24 @@
 import { createSmartAccountClient, type SmartAccountClient } from "permissionless";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
-import { createPublicClient, http, type WalletClient, type Transport, type Chain, type Hex, type LocalAccount, toHex } from "viem";
+import { createPublicClient, http, type WalletClient, type Transport, type Chain } from "viem";
 import { baseSepolia } from "viem/chains"; 
-import { toCoinbaseSmartAccount, entryPoint06Address } from "viem/account-abstraction";
+import { toCoinbaseSmartAccount } from "viem/account-abstraction";
 import { toAccount } from "viem/accounts"; 
 
-const ENTRYPOINT_ADDRESS_V06 = entryPoint06Address;
+// EntryPoint v0.6
+const ENTRYPOINT_ADDRESS_V06 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
 
-// 1. PUBLIC CLIENT
+/* =======================
+   1. PUBLIC CLIENT
+======================= */
 export const publicClient = createPublicClient({
   chain: baseSepolia,
-  transport: http("https://sepolia.base.org"),
+  transport: http("https://sepolia.base.org"), 
 });
 
-// 2. PIMLICO CLIENT
+/* =======================
+   2. PIMLICO CLIENT
+======================= */
 const pimlicoApiKey = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
 if (!pimlicoApiKey) throw new Error("❌ Pimlico API Key lost!");
 
@@ -27,108 +32,67 @@ export const pimlicoClient = createPimlicoClient({
   },
 });
 
-/**
- * 🔥 FINAL BOSS SIGNER: Direct RPC Implementation
- * Ini mem-bypass semua validasi Viem dan langsung tembak browser.
- */
-const getDirectRpcSigner = (walletClient: WalletClient): LocalAccount => {
-  if (!walletClient.account) throw new Error("Wallet not connected");
-  const userAddress = walletClient.account.address;
+/* =======================
+   3. COINBASE SMART ACCOUNT CLIENT
+======================= */
+export const getCoinbaseSmartAccountClient = async (walletClient: WalletClient) => {
+  if (!walletClient.account) {
+    throw new Error("Wallet not detected");
+  }
 
-  // Kita akses 'transport' untuk bisa request manual
-  const provider = walletClient.transport as any;
-
-  return toAccount({
-    address: userAddress,
-    type: "local",
-    source: "custom",
-
-    // 1. SIGN MESSAGE (Digunakan untuk UserOp)
-    async signMessage({ message }) {
-      console.log("✍️ [Direct RPC] Signing Message...");
-      
-      // A. Pastikan message dalam format Hex String
-      let msgHex: string;
-      if (typeof message === 'string') {
-          msgHex = toHex(message); // Convert string biasa ke hex
-      } else if (typeof message === 'object' && 'raw' in message) {
-          msgHex = message.raw as string;
-      } else {
-          msgHex = toHex(message as any); // Bytes/Uint8Array ke hex
-      }
-
-      console.log("📦 Payload:", msgHex);
-
-      try {
-        // B. Tembak langsung ke Provider (Bypass Viem High Level)
-        const signature = await provider.request({
-            method: 'personal_sign',
-            params: [msgHex, userAddress]
-        });
-
-        console.log("✅ Signature:", signature);
-        return signature;
-
-      } catch (err: any) {
-        console.error("❌ Sign Error:", err);
-        // Fallback: Kadang Coinbase minta message string biasa (bukan hex)
-        if (typeof message === 'string') {
-             console.log("🔄 Retrying with plain string...");
-             return await provider.request({
-                method: 'personal_sign',
-                params: [message, userAddress]
-            });
-        }
-        throw err;
-      }
-    },
+  // 🔥 CUSTOM OWNER ADAPTER (FIXED TYPES)
+  const owner = toAccount({
+    address: walletClient.account.address,
     
-    // 2. SIGN TYPED DATA (Digunakan untuk permit/eip712)
-    async signTypedData(typedData) {
-      console.log("✍️ [Direct RPC] Signing Typed Data...");
-      
-      // Kita stringify data karena eth_signTypedData_v4 butuh JSON String
-      const dataStr = JSON.stringify(typedData);
-      
-      return await provider.request({
-        method: 'eth_signTypedData_v4',
-        params: [userAddress, dataStr]
+    // 1. Sign Message
+    async signMessage({ message }) {
+      return walletClient.signMessage({ 
+        message, 
+        account: walletClient.account! 
       });
     },
 
-    // 3. DUMMY SIGN TRANSACTION
-    async signTransaction(_) {
-      return "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as Hex;
+    // 2. Sign Typed Data (EIP-712) - FIX ERROR TYPESCRIPT
+    async signTypedData(typedData) {
+      // Kita cast ke 'any' agar TypeScript tidak rewel soal Generic mismatch.
+      // Secara runtime ini aman karena strukturnya pasti standar EIP-712.
+      return walletClient.signTypedData({ 
+        ...(typedData as any), 
+        account: walletClient.account! 
+      });
+    },
+
+    // 3. Sign Transaction (Dummy)
+    async signTransaction(tx) {
+        // @ts-ignore
+        return walletClient.signTransaction({
+            ...tx,
+            account: walletClient.account!
+        });
     }
   });
-};
 
-// 3. COINBASE SMART ACCOUNT CLIENT
-export const getCoinbaseSmartAccountClient = async (walletClient: WalletClient) => {
-  if (!walletClient.account) throw new Error("Wallet tidak terdeteksi");
+  console.log("🔍 [Coinbase] Initializing via Viem 'toAccount'...");
 
-  // A. Gunakan Direct RPC Signer
-  const owner = getDirectRpcSigner(walletClient);
-  
-  console.log("🔍 [Vault] Signer Ready:", owner.address);
-
-  // B. Setup Coinbase Account (Sub-Account)
-  // Nonce: 0n menjaga agar address tetap sama dengan deployment
+  // 🔥 SETUP COINBASE SMART ACCOUNT
   const coinbaseAccount = await toCoinbaseSmartAccount({
     client: publicClient,
     owners: [owner], 
-    version: "1.1", 
-    nonce: 0n, 
+    nonce: 0n, // Deterministik
+    version: "1.1" // 👈 FIX ERROR 2: Versi wajib diisi sekarang
   });
 
-  console.log("🔒 [Vault] Address:", coinbaseAccount.address);
+  console.log("✅ [Coinbase] Account Ready:", coinbaseAccount.address);
 
-  // C. Setup Executor
+  // Setup Executor (Permissionless Client)
   return createSmartAccountClient({
     account: coinbaseAccount,
     chain: baseSepolia,
     bundlerTransport: http(PIMLICO_URL),
+    
+    // Gas Sponsorship
     paymaster: pimlicoClient, 
+    
     userOperation: {
       estimateFeesPerGas: async () => {
         return (await pimlicoClient.getUserOperationGasPrice()).fast;
