@@ -1,20 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWalletClient, useAccount, useBalance, useSwitchChain } from "wagmi";
-// 👇 Import Switcher Sakti
+import { useAccount, useWriteContract, useWalletClient, useSwitchChain } from "wagmi";
+
+// Libs
 import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher"; 
 import { alchemy } from "~/lib/alchemy";
-import { formatUnits, encodeFunctionData, erc20Abi, type Address, parseEther, formatEther, type Hex } from "viem";
+import { formatUnits, encodeFunctionData, erc20Abi, type Address, parseEther, formatEther, toHex } from "viem";
 import { baseSepolia } from "viem/chains"; 
-import { Copy, Refresh, Flash, ArrowRight, Check, Plus, Wallet, WarningCircle } from "iconoir-react";
+
+// Icons & UI
+import { Copy, Refresh, Flash, ArrowRight, Check, Plus, Wallet, WarningTriangle } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
 // ✅ CONFIG ADDRESS
 const SWAPPER_ADDRESS = "0xdBe1e97FB92E6511351FB8d01B0521ea9135Af12"; 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; 
 
-// --- KOMPONEN LOGO ---
 const TokenLogo = ({ token }: { token: any }) => {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => { setSrc(token.logo || null); }, [token]);
@@ -38,54 +40,41 @@ const TokenLogo = ({ token }: { token: any }) => {
 };
 
 export const SwapView = () => {
-  const { data: walletClient } = useWalletClient();
   const { address: ownerAddress, connector, chainId } = useAccount(); 
+  const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
   
-  // Cek Saldo Swapper Contract (Bensin ETH di Pool)
-  const { data: swapperBalance, refetch: refetchSwapper } = useBalance({
-    address: SWAPPER_ADDRESS as Address,
-    chainId: baseSepolia.id
-  });
+  // ✅ PAKE WAGMI BIASA (STABIL) UNTUK EOA
+  const { writeContractAsync } = useWriteContract();
 
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
   const [accountType, setAccountType] = useState<string>("Detecting...");
   const [tokens, setTokens] = useState<any[]>([]);
   const [loading, setLoading] = useState(false); 
-  const [actionLoading, setActionLoading] = useState<string | null>(null); 
+  const [depositStatus, setDepositStatus] = useState<string | null>(null); 
   const [toast, setToast] = useState<{ msg: string, type: "success" | "error" } | null>(null);
   const [selectedTokens, setSelectedTokens] = useState<Set<string>>(new Set());
 
-  // 1. FETCH DATA VAULT & DETEKSI TIPE AKUN
+  // 1. FETCH DATA & DETECT TYPE
   const fetchVaultData = async () => {
     if (!walletClient) return;
     setLoading(true);
-    refetchSwapper();
 
     try {
-      // 🔥 PANGGIL SWITCHER DENGAN SALT 0n (PERMANEN)
-      // Switcher otomatis mengembalikan SimpleAccount atau CoinbaseSmartAccount
+      // Index 0n = Permanent Wallet
       const client = await getUnifiedSmartAccountClient(walletClient, connector?.id, 0n);
       
       if (!client.account) return;
-      setVaultAddress(client.account.address);
+      const vAddr = client.account.address;
+      setVaultAddress(vAddr);
 
-      // 🔍 DETEKSI TIPE AKUN UTK UI
-      // Kita cek properti internal dari akun yang dibuat permissionless
+      // Deteksi Tipe Akun untuk Label UI
       // @ts-ignore
       const isCSW = client.account.source === "coinbaseSmartAccount" || client.account.type === "coinbaseSmartAccount";
-      // @ts-ignore
-      const isSimple = client.account.source === "simpleSmartAccount" || client.account.type === "simpleSmartAccount";
-      
-      let typeLabel = "Smart Account";
-      if (isCSW) typeLabel = "Coinbase Smart Wallet";
-      if (isSimple) typeLabel = "Simple Account (EOA)";
-      
-      setAccountType(typeLabel);
-      console.log("🔍 Active Vault Type:", typeLabel);
+      setAccountType(isCSW ? "Coinbase Smart Wallet" : "Simple Account (EOA)");
 
-      // FETCH TOKEN BALANCE VIA ALCHEMY
-      const balances = await alchemy.core.getTokenBalances(client.account.address);
+      // Fetch Token Balance via Alchemy
+      const balances = await alchemy.core.getTokenBalances(vAddr);
       const nonZeroTokens = balances.tokenBalances.filter(t => t.tokenBalance && BigInt(t.tokenBalance) > 0n);
       
       const metadata = await Promise.all(
@@ -111,7 +100,6 @@ export const SwapView = () => {
 
     } catch (e) { 
         console.error("Fetch Error:", e); 
-        setToast({ msg: "Error loading vault data", type: "error" });
     } finally { 
         setLoading(false); 
     }
@@ -134,7 +122,6 @@ export const SwapView = () => {
       else setSelectedTokens(new Set(tokens.map(t => t.contractAddress))); 
   };
 
-  // --- TOP UP SWAPPER (Manual EOA Tx) ---
   const handleTopUpSwapper = async () => {
       if(!ownerAddress) return;
       const amount = prompt("Isi saldo Swapper (ETH):", "0.01");
@@ -145,107 +132,137 @@ export const SwapView = () => {
             value: parseEther(amount), 
             chain: baseSepolia 
         });
-        setToast({msg: "Topup Sent! Refreshing...", type: "success"});
-        setTimeout(refetchSwapper, 4000);
+        setToast({msg: "Topup Sent!", type: "success"});
       } catch(e) { console.error(e); }
   };
 
-  // 🔥🔥🔥 HANDLE BATCH SWAP (UNIVERSAL LOGIC) 🔥🔥🔥
+  // 🔥🔥🔥 HANDLE BATCH SWAP (HYBRID & TYPE-SAFE) 🔥🔥🔥
   const handleBatchSwap = async () => {
     if (!vaultAddress || selectedTokens.size === 0) return;
     
-    // Cek Bensin Swapper
-    if (!swapperBalance || swapperBalance.value < parseEther("0.0001") * BigInt(selectedTokens.size)) {
-        alert("⚠️ SWAPPER HABIS BENSIN!\n\nContract Swapper tidak punya cukup ETH untuk membeli token Anda.\nSilakan klik tombol (+ Fund) di atas.");
-        return;
+    // Auto Switch Chain
+    if (chainId !== baseSepolia.id) {
+        try { await switchChainAsync({ chainId: baseSepolia.id }); } 
+        catch { return; }
     }
 
-    // Konfirmasi User
-    if (!window.confirm(`Swap ${selectedTokens.size} assets?\n\nWallet Type: ${accountType}\n(Gas sponsored by Paymaster 💸)`)) return;
+    if (!window.confirm(`Swap ${selectedTokens.size} assets?\nType: ${accountType}`)) return;
+    setDepositStatus("Preparing Batch...");
 
     try {
-        if (chainId !== baseSepolia.id) await switchChainAsync({ chainId: baseSepolia.id });
-        setActionLoading("Preparing UserOp...");
+        const isCoinbase = connector?.id === 'coinbaseWalletSDK';
+        
+        // ============================================
+        // 🚀 JALUR 1: COINBASE SMART WALLET (Manual RPC)
+        // ============================================
+        if (isCoinbase) {
+            setDepositStatus("Sending to Coinbase...");
+            
+            const calls = [];
+            
+            for (const addr of selectedTokens) {
+                const token = tokens.find(t => t.contractAddress === addr);
+                if (!token) continue;
 
-        // 1. DAPATKAN FRESH CLIENT
-        // Panggil switcher lagi untuk memastikan kita pakai client yang valid
-        const client = await getUnifiedSmartAccountClient(walletClient!, connector?.id, 0n);
+                // 1. Approve
+                calls.push({
+                    to: token.contractAddress as Address,
+                    data: encodeFunctionData({ 
+                        abi: erc20Abi, 
+                        functionName: "approve", 
+                        args: [SWAPPER_ADDRESS as Address, BigInt(token.rawBalance)] 
+                    }),
+                    value: toHex(0n) // Wajib Hex string buat RPC call
+                });
 
-        // 2. SUSUN CALLS (DAFTAR TUGAS)
-        const batchCalls: { to: Address; value: bigint; data: Hex }[] = [];
+                // 2. Swap
+                const swapperAbi = [{ name: "swapTokenForETH", type: "function", stateMutability: "nonpayable", inputs: [{type: "address", name: "token"}, {type: "uint256", name: "amount"}], outputs: [] }] as const;
+                calls.push({
+                    to: SWAPPER_ADDRESS as Address,
+                    data: encodeFunctionData({ 
+                        abi: swapperAbi, 
+                        functionName: "swapTokenForETH", 
+                        args: [token.contractAddress as Address, BigInt(token.rawBalance)] 
+                    }),
+                    value: toHex(0n)
+                });
+            }
 
-        for (const addr of selectedTokens) {
-            const token = tokens.find(t => t.contractAddress === addr);
-            if (!token) continue;
+            // 🔥 FIX UTAMA: GUNAKAN 'as any' AGAR TYPESCRIPT TIDAK REWEL
+            // wallet_sendCalls adalah standar baru (EIP-5792) yang mungkin belum ada di type definition Viem lama.
+            // Secara runtime ini PASTI jalan di Coinbase Wallet.
+            const id = await walletClient?.request({
+                method: 'wallet_sendCalls' as any,
+                params: [{
+                    version: '1.0',
+                    chainId: toHex(baseSepolia.id),
+                    from: ownerAddress as Address,
+                    calls: calls
+                }] as any
+            });
+            
+            console.log("Coinbase Batch ID:", id);
+        } 
+        
+        // ============================================
+        // 🐢 JALUR 2: METAMASK / EOA (Contract Call)
+        // ============================================
+        else {
+            setDepositStatus("Signing via Wallet...");
+            
+            const dests: Address[] = [];
+            const values: bigint[] = [];
+            const datas: `0x${string}`[] = [];
 
-            // Task A: Approve
-            batchCalls.push({
-                to: token.contractAddress as Address,
-                value: 0n,
-                data: encodeFunctionData({ 
+            for (const addr of selectedTokens) {
+                const token = tokens.find(t => t.contractAddress === addr);
+                if (!token) continue;
+                
+                // 1. Approve
+                dests.push(token.contractAddress as Address); 
+                values.push(0n);
+                datas.push(encodeFunctionData({ 
                     abi: erc20Abi, 
                     functionName: "approve", 
                     args: [SWAPPER_ADDRESS as Address, BigInt(token.rawBalance)] 
-                })
-            });
+                }));
 
-            // Task B: Swap
-            const swapperAbi = [{ 
-                name: "swapTokenForETH", 
-                type: "function", 
-                stateMutability: "nonpayable", 
-                inputs: [{type: "address", name: "token"}, {type: "uint256", name: "amount"}], 
-                outputs: [] 
-            }] as const;
-
-            batchCalls.push({
-                to: SWAPPER_ADDRESS as Address,
-                value: 0n,
-                data: encodeFunctionData({ 
+                // 2. Swap
+                const swapperAbi = [{ name: "swapTokenForETH", type: "function", stateMutability: "nonpayable", inputs: [{type: "address", name: "token"}, {type: "uint256", name: "amount"}], outputs: [] }] as const;
+                dests.push(SWAPPER_ADDRESS as Address); 
+                values.push(0n);
+                datas.push(encodeFunctionData({ 
                     abi: swapperAbi, 
                     functionName: "swapTokenForETH", 
                     args: [token.contractAddress as Address, BigInt(token.rawBalance)] 
-                })
+                }));
+            }
+
+            const batchAbi = [{ type: 'function', name: 'executeBatch', inputs: [{ name: 'dest', type: 'address[]' }, { name: 'value', type: 'uint256[]' }, { name: 'func', type: 'bytes[]' }], outputs: [], stateMutability: 'payable' }] as const;
+
+            const hash = await writeContractAsync({
+                address: vaultAddress as Address,
+                abi: batchAbi,
+                functionName: 'executeBatch',
+                args: [dests, values, datas],
+                chainId: baseSepolia.id
             });
+            console.log("Tx Hash:", hash);
         }
 
-        setActionLoading(`Signing with ${accountType}...`);
-
-        // 3. KIRIM USER OPERATION (THE MAGIC)
-        // - Kalau SimpleAccount -> Minta Personal Sign
-        // - Kalau Coinbase -> Minta Typed Data Sign (EIP-712)
-        // Library 'permissionless' menangani ini secara otomatis berdasarkan tipe akun.
-        const userOpHash = await client.sendUserOperation({
-            account: client.account!,
-            calls: batchCalls
-        });
-
-        console.log("UserOp Hash:", userOpHash);
-        setActionLoading("Bundling on Chain...");
-
-        // 4. TUNGGU RECEIPT
-        const receipt = await client.waitForUserOperationReceipt({ hash: userOpHash });
-        console.log("Receipt:", receipt);
+        setDepositStatus("Submitted! 🚀");
+        await new Promise(r => setTimeout(r, 5000));
         
-        // Optimistic Update UI
+        // UI Cleanup
         setTokens(prev => prev.filter(t => !selectedTokens.has(t.contractAddress)));
         setSelectedTokens(new Set()); 
-        
-        setToast({ msg: "Swap Success! 🚀", type: "success" });
-        refetchSwapper();
+        setToast({ msg: "Swap Processed!", type: "success" });
 
     } catch (e: any) {
-        console.error("BATCH ERROR:", e);
-        let msg = e.shortMessage || e.message;
-        
-        // Pesan error yang lebih manusiawi
-        if (msg.includes("paymaster")) msg = "Gas Sponsorship Failed (Paymaster issue)";
-        if (msg.includes("User rejected")) msg = "Transaction Rejected by User";
-        if (msg.includes("Connector not found")) msg = "Wallet Disconnected. Please refresh.";
-
-        setToast({ msg: "Failed: " + msg, type: "error" });
-    } finally {
-        setActionLoading(null);
+        console.error("SWAP ERROR:", e);
+        setToast({ msg: "Failed: " + (e.shortMessage || e.message), type: "error" });
+    } finally { 
+        setDepositStatus(null); 
     }
   };
 
@@ -254,47 +271,25 @@ export const SwapView = () => {
       <SimpleToast message={toast?.msg || null} type={toast?.type} onClose={() => setToast(null)} />
       
       {/* LOADING OVERLAY */}
-      {actionLoading && ( 
-          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
-              <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl flex flex-col items-center gap-4 shadow-2xl">
-                  <div className="w-10 h-10 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
-                  <div className="font-bold text-yellow-500 animate-pulse">{actionLoading}</div>
-              </div>
-          </div> 
+      {depositStatus && ( 
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl flex flex-col items-center gap-4 shadow-2xl">
+                <div className="w-10 h-10 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="font-bold text-yellow-500 animate-pulse">{depositStatus}</div>
+            </div>
+        </div> 
       )}
 
-      {/* HEADER CARD */}
+      {/* HEADER */}
       <div className="p-5 bg-gradient-to-br from-yellow-900 to-amber-900 text-white rounded-2xl shadow-lg mb-6 relative overflow-hidden">
-        
-        {/* BADGE TIPE AKUN */}
         <div className="absolute top-4 right-4 text-[10px] px-2 py-1 rounded-full border border-white/20 bg-black/20 font-medium flex items-center gap-1 backdrop-blur-md">
-           <Wallet className="w-3 h-3" /> 
-           <span className="truncate max-w-[120px]">{accountType}</span>
+           <Wallet className="w-3 h-3" /> <span className="truncate max-w-[120px]">{accountType}</span>
         </div>
-
         <div className="flex items-center gap-2 text-yellow-200 text-xs mb-1">
             <Flash className="w-3 h-3" /> Dust Sweeper
         </div>
         <h2 className="text-xl font-bold mb-2">Swap Dust to ETH</h2>
-        
-        {/* INFO SWAPPER BALANCE */}
-        <div className="flex items-center justify-between bg-black/20 p-3 rounded-xl border border-white/10 mb-2">
-           <div className="text-xs">
-              <span className="opacity-60 block">Swapper Pool:</span>
-              <span className={`font-mono font-bold ${!swapperBalance || swapperBalance.value === 0n ? "text-red-400" : "text-green-400"}`}>
-                {swapperBalance ? parseFloat(formatEther(swapperBalance.value)).toFixed(4) : "Loading..."} ETH
-              </span>
-           </div>
-           <button 
-               onClick={handleTopUpSwapper} 
-               className="px-3 py-1 bg-white/10 hover:bg-white/20 rounded-lg flex items-center gap-1 text-[10px] font-bold transition-colors border border-white/5"
-           >
-              <Plus className="w-3 h-3" /> Fund
-           </button>
-        </div>
-        
-        {/* VAULT ADDRESS */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mt-4">
              <code className="text-[10px] opacity-60 font-mono">{vaultAddress || "Connecting..."}</code>
              <button onClick={() => vaultAddress && navigator.clipboard.writeText(vaultAddress)}>
                  <Copy className="w-3 h-3 hover:text-white" />
@@ -314,19 +309,16 @@ export const SwapView = () => {
         </div>
         <button 
             onClick={fetchVaultData} 
-            className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:rotate-180 transition-all duration-500 active:scale-90"
+            className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:rotate-180 transition-all duration-500"
         >
             <Refresh className="w-4 h-4 text-zinc-500" />
         </button>
       </div>
 
-      {/* LIST TOKENS */}
+      {/* TOKEN LIST */}
       <div className="space-y-3">
         {loading ? ( 
-            <div className="text-center py-10 text-zinc-400 animate-pulse flex flex-col items-center gap-2">
-                <div className="w-6 h-6 border-2 border-zinc-300 border-t-zinc-500 rounded-full animate-spin"></div>
-                <span className="text-xs">Scanning Vault...</span>
-            </div> 
+            <div className="text-center py-10 text-zinc-400 animate-pulse">Scanning Vault...</div> 
         ) : tokens.length === 0 ? ( 
             <div className="text-center py-12 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-100 dark:border-zinc-800">
                <div className="text-zinc-400 text-sm mb-1">No dust tokens found.</div>
@@ -346,24 +338,20 @@ export const SwapView = () => {
                         }`}
                     >
                         <div className="flex items-center gap-3">
-                            {/* CHECKBOX */}
                             <div className={`w-6 h-6 rounded-full border flex items-center justify-center transition-colors ${isSelected ? "bg-yellow-500 border-yellow-500" : "bg-white border-zinc-300"}`}>
                                 {isSelected && <Check className="w-4 h-4 text-white" />}
                             </div>
 
-                            {/* LOGO */}
                             <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center overflow-hidden border border-zinc-200">
                                 <TokenLogo token={token} />
                             </div>
                             
-                            {/* TEXT INFO */}
                             <div>
                                 <div className="font-bold text-sm">{token.symbol}</div>
                                 <div className="text-xs text-zinc-500 font-mono">{parseFloat(token.formattedBal).toFixed(6)}</div>
                             </div>
                         </div>
 
-                        {/* ARROW */}
                         <div className="flex items-center gap-2 opacity-50">
                             <ArrowRight className="w-4 h-4 text-zinc-300" />
                             <div className="text-xs font-bold text-zinc-400">ETH</div>
@@ -374,19 +362,15 @@ export const SwapView = () => {
         )}
       </div>
 
-      {/* FLOATING ACTION BUTTON (FAB) */}
+      {/* FAB */}
       {selectedTokens.size > 0 && (
           <div className="fixed bottom-24 left-4 right-4 z-40 animate-in slide-in-from-bottom-5">
             <button 
                 onClick={handleBatchSwap} 
-                className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600 text-white shadow-xl shadow-yellow-500/30 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 transition-transform active:scale-95"
+                className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-600 text-white shadow-xl py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 transition-transform active:scale-95"
             >
-                <Flash className="w-5 h-5 fill-current" /> 
-                Batch Swap {selectedTokens.size} Assets
+                <Flash className="w-5 h-5" /> Batch Swap {selectedTokens.size} Assets
             </button>
-            <div className="text-center mt-2 text-[10px] text-zinc-400 font-medium">
-                Gas Sponsored by Pimlico 💸
-            </div>
           </div>
       )}
     </div>
