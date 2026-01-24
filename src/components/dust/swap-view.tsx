@@ -10,7 +10,7 @@ import { baseSepolia } from "viem/chains";
 import { Copy, Wallet, Refresh, Flash, ArrowRight, WarningCircle, Check, CheckCircle } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
-// ✅ ALAMAT SWAPPER ANDA (SUDAH DIPASANG)
+// ✅ ALAMAT SWAPPER (MOCK DUST SWAPPER)
 const SWAPPER_ADDRESS = "0xdBe1e97FB92E6511351FB8d01B0521ea9135Af12"; 
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // MockUSDC di Sepolia
@@ -185,28 +185,29 @@ export const SwapView = () => {
         });
 
         console.log("Batch Hash:", txHash);
-        
-        // 🚀 OPTIMISTIC UPDATE: Langsung hapus token dari layar!
-        setTokens(prev => prev.filter(t => !selectedTokens.has(t.contractAddress)));
-        setSelectedTokens(new Set()); 
-        
         setToast({ msg: "Batch Swap Submitted! 🚀", type: "success" });
-        setActionLoading("Waiting for Block...");
+        setActionLoading("Cleaning up UI...");
 
-        // Tunggu agak lama untuk Alchemy indexing
-        await new Promise(r => setTimeout(r, 8000));
-        await fetchVaultData();
+        // --- OPTIMISTIC UPDATE (KUNCI FIX NYA) ---
+        // 1. Simpan dulu ID token yang mau dihapus
+        const tokensToRemove = new Set(selectedTokens);
+        
+        // 2. Hapus token dari State 'tokens' secara manual (Tanpa nunggu Alchemy)
+        setTokens(prevTokens => prevTokens.filter(t => !tokensToRemove.has(t.contractAddress)));
+        
+        // 3. Reset seleksi
+        setSelectedTokens(new Set()); 
 
+        // ❌ JANGAN PANGGIL fetchVaultData() DISINI!
+        // Biarkan user manual refresh nanti kalau mau, biar token gak muncul lagi gara2 Alchemy lemot.
+        
     } catch (e: any) {
         console.error(e);
-        // Fallback: Jika wallet tidak support batch (sangat jarang), beri info
         if (e.message?.includes("function selector")) {
             setToast({ msg: "Smart Account version too old for batching.", type: "error" });
         } else {
             setToast({ msg: "Failed: " + (e.shortMessage || e.message), type: "error" });
         }
-        // Kembalikan token jika gagal
-        fetchVaultData();
     } finally {
         setActionLoading(null);
     }
@@ -222,7 +223,7 @@ export const SwapView = () => {
            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
               <div className="w-10 h-10 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
               <div className="text-sm font-bold text-center animate-pulse text-yellow-500">{actionLoading}</div>
-              <div className="text-xs text-zinc-500">Please confirm 1 Transaction in Wallet</div>
+              <div className="text-xs text-zinc-500">Confirm transaction in wallet</div>
            </div>
         </div>
       )}
@@ -325,7 +326,7 @@ export const SwapView = () => {
       <div className="mt-20 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl flex gap-3 items-start">
          <WarningCircle className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
          <div className="text-xs text-blue-800 dark:text-blue-200">
-            <strong>Batch Power:</strong> This will bundle all Approvals and Swaps into a single on-chain transaction.
+            <strong>Batch Power:</strong> This bundles Approvals and Swaps into a single transaction. UI updates instantly, ignoring network lag.
          </div>
       </div>
     </div>
