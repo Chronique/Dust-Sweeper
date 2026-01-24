@@ -2,41 +2,40 @@ import { type WalletClient } from "viem";
 import { getSmartAccountClient as getSimpleClient } from "./simple-smart-account";
 import { getCoinbaseSmartAccountClient } from "./coinbase-smart-account";
 
-/**
- * SMART WALLET SWITCHER (ROBUST VERSION)
- * Otomatis memilih jenis Smart Account berdasarkan Wallet asli user.
- */
 export const getUnifiedSmartAccountClient = async (
   walletClient: WalletClient, 
-  connectorId?: string, // 👈 Jangan lupa koma disini
-  accountIndex: bigint = 0n // 👈 Parameter baru (Default 0n)
+  connectorId?: string,
+  accountIndex: bigint = 0n 
 ) => {
-  // 1. Log untuk Debugging
-  console.log("🔍 [Switcher] Checking Wallet Type...");
-  console.log("👉 Connector ID:", connectorId);
-  console.log("👉 Salt/Index:", accountIndex);
+  // 1. Debugging Info
+  console.log("🔍 [Switcher] Connector ID:", connectorId);
   
-  // 2. DETEKSI AGRESIF
-  const isCoinbaseID = connectorId === "coinbaseWalletSDK" || connectorId === "coinbaseWallet";
+  // 2. DETEKSI SUPER AGRESIF
+  // Cek ID Connector standar
+  const isCoinbaseID = connectorId === "coinbaseWalletSDK" || connectorId === "coinbaseWallet" || connectorId === "coinbase";
   
+  // Cek Properti Provider (Paling Akurat)
   // @ts-ignore
-  const isCoinbaseProvider = walletClient.transport?.provider?.isCoinbaseWallet === true;
+  const provider = walletClient.transport?.provider;
+  // @ts-ignore
+  const isCoinbaseProvider = provider?.isCoinbaseWallet === true || provider?.isCoinbaseBrowser === true;
 
-  const isCoinbase = isCoinbaseID || isCoinbaseProvider;
+  // Cek Nama Wallet (Wagmi sering kasih nama 'Coinbase Wallet')
+  // @ts-ignore
+  const isCoinbaseName = walletClient.account?.name?.toLowerCase().includes("coinbase");
+
+  const isCoinbase = isCoinbaseID || isCoinbaseProvider || isCoinbaseName;
 
   console.log("👉 Is Coinbase Detected?", isCoinbase);
 
   // 3. LOGIKA PEMILIHAN
   if (isCoinbase) {
-    console.log("✅ MODE: Coinbase Smart Wallet (Sub-Account)");
-    // Coinbase tidak butuh index (sudah permanen by default)
+    console.log("✅ MODE: Coinbase Smart Wallet (EIP-712)");
     return await getCoinbaseSmartAccountClient(walletClient);
   } 
   
   else {
     console.log("✅ MODE: Standard EOA (Simple Account)");
-    // Default untuk MetaMask, TrustWallet, dll
-    // Kita kirim index agar alamatnya bisa diatur (Permanen/Baru)
     return await getSimpleClient(walletClient, accountIndex);
   }
 };
