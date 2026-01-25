@@ -1,23 +1,16 @@
 import { createSmartAccountClient, type SmartAccountClient } from "permissionless";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
-import { createPublicClient, http, type WalletClient, type Transport, type Chain } from "viem";
+import { createPublicClient, http, type WalletClient, type Transport, type Chain, type LocalAccount, type Address } from "viem";
 import { baseSepolia } from "viem/chains"; 
 import { toCoinbaseSmartAccount } from "viem/account-abstraction";
-import { toAccount } from "viem/accounts"; 
 
 const ENTRYPOINT_ADDRESS_V06 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
 
-/* =======================
-   1. PUBLIC CLIENT
-======================= */
 export const publicClient = createPublicClient({
   chain: baseSepolia,
   transport: http("https://sepolia.base.org"), 
 });
 
-/* =======================
-   2. PIMLICO CLIENT (PAYMASTER)
-======================= */
 const pimlicoApiKey = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
 const PIMLICO_URL = `https://api.pimlico.io/v2/84532/rpc?apikey=${pimlicoApiKey}`;
 
@@ -29,62 +22,76 @@ export const pimlicoClient = createPimlicoClient({
   },
 });
 
-/* =======================
-   3. COINBASE SMART ACCOUNT (DRIVER)
-======================= */
 export const getCoinbaseSmartAccountClient = async (walletClient: WalletClient) => {
   if (!walletClient.account) throw new Error("Wallet not detected");
 
-  // 🔥 CUSTOM ADAPTER: FORCE EIP-712
-  // Kita buat wrapper 'owner' yang memaksa library menggunakan signTypedData.
-  const owner = toAccount({
+  // 1. Definisikan Owner sebagai LocalAccount MURNI
+  // Kita bypass semua deteksi otomatis Viem
+  const customOwner: LocalAccount = {
     address: walletClient.account.address,
-    
-    // Fallback Sign Message (Jarang dipanggil kalau setup benar)
-    async signMessage({ message }) {
-      console.log("⚠️ Warning: Library requesting Raw Sign...");
-      return walletClient.signMessage({ message, account: walletClient.account! });
+    publicKey: walletClient.account.address,
+    source: 'custom',
+    type: 'local', // 👈 KUNCI: Paksa jadi local agar logic kita jalan
+
+    // ⛔ BLOKIR TOTAL RAW SIGN
+    signMessage: async ({ message }: { message: any }) => {
+       console.error("⛔ BLOCKED: Library tried to Raw Sign!");
+       throw new Error("Smart Wallets cannot Raw Sign. Logic Error.");
     },
 
-    // INI YANG WAJIB DIPANGGIL OLEH USER OP
-    async signTypedData(parameters) {
-      console.log("✍️ Signing EIP-712 Typed Data...");
+    // ⛔ BLOKIR SIGN TRANSACTION BIASA
+    signTransaction: async (tx: any) => {
+       console.error("⛔ BLOCKED: Library tried to Sign Transaction directly!");
+       throw new Error("Smart Wallets cannot Sign Transaction directly.");
+    },
+
+    // ✅ PAKSA LEWAT SINI (EIP-712)
+    signTypedData: async (parameters: any) => {
+      console.log("✅ SUCCESS: Intercepted Sign Request -> Forwarding to Wallet as EIP-712");
       
-      // Kita spread parameter dengan casting 'any' agar TypeScript tidak rewel
-      // tapi data runtime tetap valid dikirim ke Coinbase Wallet.
-      return walletClient.signTypedData({ 
+      const params = parameters;
+      
+      // Inject ChainID Base Sepolia jika kosong
+      if (params.domain && !params.domain.chainId) {
+         params.domain.chainId = baseSepolia.id; 
+      }
+
+      // Panggil Wallet Asli (Extension) dengan format yang benar
+      return walletClient.signTypedData({
         account: walletClient.account!,
-        ...(parameters as any)
+        domain: params.domain,
+        types: params.types,
+        primaryType: params.primaryType,
+        message: params.message
       });
-    },
-
-    async signTransaction(tx) {
-        // @ts-ignore
-        return walletClient.signTransaction({ ...tx, account: walletClient.account! });
     }
-  });
+  } as any;
 
-  console.log("🔍 [CSW] Initializing Smart Account...");
+  console.log("🔍 [CSW] Creating Account with Custom Owner...");
 
-  // Setup Account Object
+  // 2. Buat Coinbase Account
   const coinbaseAccount = await toCoinbaseSmartAccount({
     client: publicClient,
-    owners: [owner], 
-    nonce: 0n, // Deterministik
-    version: "1.1" // Versi terbaru
+    owners: [customOwner], // Masukkan owner modifikasi kita
+    nonce: 0n, 
+    version: "1.1" 
   });
 
-  console.log("✅ [CSW] Address:", coinbaseAccount.address);
+  // 3. MONKEY PATCH (Jaga-jaga)
+  // Kita timpa lagi fungsi sign di hasil akhir smart account biar yakin 100%
+  // @ts-ignore
+  coinbaseAccount.signMessage = customOwner.signMessage;
+  // @ts-ignore
+  coinbaseAccount.signTypedData = customOwner.signTypedData;
 
-  // Setup Permissionless Client
+  console.log("✅ [CSW] Account Created:", coinbaseAccount.address);
+
+  // 4. Return Client
   return createSmartAccountClient({
     account: coinbaseAccount,
     chain: baseSepolia,
     bundlerTransport: http(PIMLICO_URL),
-    
-    // 🔥 AKTIFKAN PAYMASTER AGAR GAS GRATIS / DIBAYAR VAULT
     paymaster: pimlicoClient, 
-    
     userOperation: {
       estimateFeesPerGas: async () => {
         return (await pimlicoClient.getUserOperationGasPrice()).fast;
