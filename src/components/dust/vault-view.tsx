@@ -2,18 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { useWalletClient, useAccount, useWriteContract, useSwitchChain } from "wagmi";
-import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher"; 
 import { publicClient } from "~/lib/simple-smart-account"; 
 import { alchemy } from "~/lib/alchemy";
-import { formatEther, formatUnits, encodeFunctionData, erc20Abi, type Address } from "viem";
+import { formatUnits, encodeFunctionData, erc20Abi, type Address } from "viem";
 import { base } from "viem/chains"; 
-import { Copy, Wallet, Rocket, Check, Dollar, Refresh, Gas, User, NavArrowLeft, NavArrowRight } from "iconoir-react";
+import { Copy, Wallet, Rocket, Check, Dollar, Refresh, Gas, User, NavArrowLeft, NavArrowRight, Download, WarningTriangle } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 import { fetchMoralisTokens, type MoralisToken } from "~/lib/moralis-data";
+import { useFrameContext } from "~/components/providers/frame-provider";
+import { getZeroDevSmartAccountClient } from "~/lib/zerodev-smart-account";
+import { getCoinbaseSmartAccountClient } from "~/lib/coinbase-smart-account";
+import { formatEther } from "viem";
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; 
-const ITEMS_PER_PAGE = 10; 
+const ITEMS_PER_PAGE = 5; 
 
+// Komponen Logo Token
 const TokenLogo = ({ token }: { token: any }) => {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => { setSrc(token.logo || null); }, [token]);
@@ -24,7 +28,7 @@ const TokenLogo = ({ token }: { token: any }) => {
     `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/assets/${token.contractAddress || token.token_address}/logo.png`
   ].filter(Boolean);
 
-  if (!src && sources.length === 0) return <div className="text-xs font-bold">?</div>;
+  if (!src && sources.length === 0) return <div className="text-[10px] font-bold opacity-30">?</div>;
 
   return (
     <img 
@@ -45,7 +49,12 @@ export const VaultView = () => {
   const { address: ownerAddress, connector, chainId } = useAccount(); 
   const { writeContractAsync } = useWriteContract(); 
   const { switchChainAsync } = useSwitchChain();     
+  const frameContext = useFrameContext();
   
+  // Deteksi Mode
+  const isInMiniApp = frameContext?.isInMiniApp ?? false;
+  const mode = isInMiniApp ? "COINBASE" : "ZERODEV";
+
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
   const [ethBalance, setEthBalance] = useState("0");
   const [usdcBalance, setUsdcBalance] = useState<any>(null);
@@ -61,23 +70,30 @@ export const VaultView = () => {
   
   const [currentPage, setCurrentPage] = useState(1);
 
+  // 1. FETCH VAULT DATA (Alchemy)
   const fetchVaultData = async () => {
     if (!walletClient) return;
     setLoading(true);
     try {
-      const client = await getUnifiedSmartAccountClient(walletClient, connector?.id);
-      if (!client.account) return;
+      let addr, code, bal;
 
-      const address = client.account.address;
-      setVaultAddress(address);
+      if (mode === "ZERODEV") {
+          const client = await getZeroDevSmartAccountClient(walletClient);
+          addr = client.account.address;
+      } else {
+          const client = await getCoinbaseSmartAccountClient(walletClient);
+          addr = client.account.address;
+      }
 
-      const bal = await publicClient.getBalance({ address });
+      code = await publicClient.getBytecode({ address: addr });
+      bal = await publicClient.getBalance({ address: addr });
+
+      setVaultAddress(addr);
       setEthBalance(formatEther(bal));
-
-      const code = await publicClient.getBytecode({ address });
       setIsDeployed(code !== undefined && code !== null && code !== "0x");
 
-      const balances = await alchemy.core.getTokenBalances(address);
+      // Fetch Token Vault
+      const balances = await alchemy.core.getTokenBalances(addr);
       const nonZeroTokens = balances.tokenBalances.filter(t => 
           t.tokenBalance && BigInt(t.tokenBalance) > 0n
       );
@@ -103,6 +119,16 @@ export const VaultView = () => {
       const usdc = formatted.find(t => t.contractAddress.toLowerCase() === USDC_ADDRESS.toLowerCase());
       const others = formatted.filter(t => t.contractAddress.toLowerCase() !== USDC_ADDRESS.toLowerCase());
 
+      // [SORTING VAULT] Token dengan logo di atas, tanpa logo di bawah
+      others.sort((a, b) => {
+          const hasLogoA = !!a.logo;
+          const hasLogoB = !!b.logo;
+          if (hasLogoA && !hasLogoB) return -1;
+          if (!hasLogoA && hasLogoB) return 1;
+          // Kalau sama-sama punya/tidak punya logo, urutkan by balance desc
+          return parseFloat(b.formattedBal) - parseFloat(a.formattedBal);
+      });
+
       setUsdcBalance(usdc || null);
       setTokens(others);
       setCurrentPage(1); 
@@ -110,12 +136,27 @@ export const VaultView = () => {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
+  // 2. FETCH OWNER DATA (Moralis)
   const fetchOwnerData = async () => {
     if (!ownerAddress) return;
     setLoadingOwnerTokens(true);
     try {
         const data = await fetchMoralisTokens(ownerAddress);
+        
         const activeTokens = data.filter(t => BigInt(t.balance) > 0n);
+
+        // [SORTING OWNER] Spam paling bawah
+        activeTokens.sort((a, b) => {
+            // Prioritas 1: Bukan Spam
+            if (!a.possible_spam && b.possible_spam) return -1;
+            if (a.possible_spam && !b.possible_spam) return 1;
+            
+            // Prioritas 2: Balance Terbesar
+            const balA = parseFloat(formatUnits(BigInt(a.balance), a.decimals));
+            const balB = parseFloat(formatUnits(BigInt(b.balance), b.decimals));
+            return balB - balA;
+        });
+        
         setOwnerTokens(activeTokens);
     } catch (e) {
         console.error("Gagal fetch Moralis:", e);
@@ -124,7 +165,7 @@ export const VaultView = () => {
     }
   };
 
-  useEffect(() => { fetchVaultData(); }, [walletClient, connector?.id]); 
+  useEffect(() => { fetchVaultData(); }, [walletClient, mode]); 
   useEffect(() => { if(ownerAddress) fetchOwnerData(); }, [ownerAddress]);
 
   const ensureNetwork = async () => {
@@ -178,6 +219,39 @@ export const VaultView = () => {
         setToast({ msg: "Failed: " + (e.shortMessage || e.message), type: "error" });
     } finally { setActionLoading(null); }
   };
+
+  const handleDeposit = async (token: MoralisToken) => {
+    if (!walletClient || !ownerAddress || !vaultAddress) return;
+    
+    // Konfirmasi User
+    if (!window.confirm(`Deposit ${token.symbol} ke Vault?`)) return;
+
+    try {
+      await ensureNetwork();
+      setActionLoading(`Depositing ${token.symbol}...`);
+
+      const txHash = await writeContractAsync({
+        address: token.token_address as Address, 
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [vaultAddress as Address, BigInt(token.balance)], 
+        chainId: base.id,
+      });
+
+      console.log("Deposit Hash:", txHash);
+      setToast({ msg: "Deposit Sent! Waiting for block...", type: "success" });
+
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      await fetchVaultData(); 
+      await fetchOwnerData(); 
+
+    } catch (e: any) {
+      console.error(e);
+      setToast({ msg: "Deposit Failed: " + (e.shortMessage || e.message), type: "error" });
+    } finally {
+      setActionLoading(null);
+    }
+  };
   
   const totalPages = Math.ceil(tokens.length / ITEMS_PER_PAGE);
   const currentTokens = tokens.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -202,7 +276,7 @@ export const VaultView = () => {
            {isDeployed ? "Active" : "Inactive"}
         </div>
         <div className="flex items-center gap-2 text-zinc-400 text-xs mb-1">
-            <Wallet className="w-3 h-3" /> Smart Vault (Base Mainnet)
+            <Wallet className="w-3 h-3" /> Smart Vault ({mode})
         </div>
         <div className="flex items-center justify-between mb-4">
             <code className="text-sm truncate max-w-[180px] opacity-80">{vaultAddress || "Loading..."}</code>
@@ -229,7 +303,7 @@ export const VaultView = () => {
         </div>
       </div>
 
-      {/* --- VAULT ASSETS --- */}
+      {/* --- VAULT ASSETS (PAGINATED & SORTED) --- */}
       <div>
         <div className="flex items-center justify-between px-1 mb-2">
             <h3 className="font-semibold text-lg flex items-center gap-2">
@@ -237,39 +311,39 @@ export const VaultView = () => {
             </h3>
             <button onClick={fetchVaultData} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:rotate-180 transition-all duration-500"><Refresh className="w-4 h-4 text-zinc-500" /></button>
         </div>
-        <div className="space-y-2">
-          {tokens.length === 0 ? <div className="text-center py-4 text-zinc-400 text-sm border border-dashed border-zinc-700 rounded-xl">Vault is empty.</div> : currentTokens.map((token, i) => (
-            <div key={i} className="flex items-center justify-between p-3 border border-zinc-100 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center overflow-hidden"><TokenLogo token={token} /></div>
-                    <div><div className="font-semibold text-sm">{token.symbol}</div><div className="text-xs text-zinc-500">{token.formattedBal}</div></div>
+        
+        <div className="space-y-2 min-h-[200px]">
+          {tokens.length === 0 ? <div className="text-center py-10 text-zinc-400 text-sm border border-dashed border-zinc-700 rounded-xl">Vault is empty.</div> : currentTokens.map((token, i) => (
+            <div key={i} className="flex items-center justify-between p-3 border border-zinc-100 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm animate-in slide-in-from-bottom-2">
+                <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center shrink-0 overflow-hidden"><TokenLogo token={token} /></div>
+                    <div><div className="font-semibold text-sm truncate max-w-[100px]">{token.symbol}</div><div className="text-xs text-zinc-500">{parseFloat(token.formattedBal).toFixed(4)}</div></div>
                 </div>
-                <button onClick={() => handleWithdraw(token)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 text-blue-600">WD</button>
+                <button onClick={() => handleWithdraw(token)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors">WD</button>
             </div>
           ))}
         </div>
         
-        {/* [UBAH DI SINI] PAGINATION: Angka 1, 2, 3 ... */}
+        {/* PAGINATION ANGKA (1, 2, 3...) */}
         {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 pt-4 overflow-x-auto">
+            <div className="flex items-center justify-center gap-2 pt-6 pb-2 overflow-x-auto">
               <button 
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                className="p-2 rounded-lg hover:bg-zinc-100 disabled:opacity-30"
+                className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"
               >
-                <NavArrowLeft className="w-5 h-5" />
+                <NavArrowLeft className="w-4 h-4" />
               </button>
               
-              {/* Generate Page Numbers */}
               <div className="flex items-center gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
                   <button
                     key={page}
                     onClick={() => setCurrentPage(page)}
-                    className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all border ${
                       currentPage === page 
-                        ? "bg-blue-600 text-white shadow-md scale-110" 
-                        : "bg-transparent text-zinc-500 hover:bg-zinc-100"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-md scale-110" 
+                        : "bg-white dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50"
                     }`}
                   >
                     {page}
@@ -280,15 +354,15 @@ export const VaultView = () => {
               <button 
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                className="p-2 rounded-lg hover:bg-zinc-100 disabled:opacity-30"
+                className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"
               >
-                <NavArrowRight className="w-5 h-5" />
+                <NavArrowRight className="w-4 h-4" />
               </button>
             </div>
         )}
       </div>
 
-      {/* --- OWNER ASSETS (FIXED COLORS) --- */}
+      {/* --- OWNER ASSETS (SORTED SPAM LAST) --- */}
       <div>
         <div className="flex items-center justify-between px-1 mb-2 mt-6 border-t pt-4 border-zinc-800">
             <h3 className="font-semibold text-lg flex items-center gap-2">
@@ -303,17 +377,29 @@ export const VaultView = () => {
                 <div className="text-center py-4 text-zinc-400 text-sm bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800">No assets found in Owner Wallet.</div>
             ) : (
                 ownerTokens.map((token, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 border border-green-200 dark:border-green-800 rounded-xl bg-green-50/80 dark:bg-green-900/10 shadow-sm">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center overflow-hidden border border-green-100 dark:border-green-900">
+                    <div key={i} className={`flex items-center justify-between p-3 border rounded-xl shadow-sm transition-all ${
+                        token.possible_spam 
+                          ? "bg-red-50/50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30 opacity-70 grayscale-[0.5]" // Tampilan Spam Beda
+                          : "bg-green-50/80 dark:bg-green-900/10 border-green-200 dark:border-green-800"
+                    }`}>
+                        <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="w-10 h-10 rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center shrink-0 overflow-hidden border border-green-100 dark:border-green-900">
                                 {token.logo ? <img src={token.logo} className="w-full h-full object-cover"/> : <div className="text-xs font-bold text-green-600 dark:text-green-500">?</div>}
                             </div>
                             <div>
-                                <div className="font-semibold text-sm text-green-900 dark:text-green-100">{token.symbol}</div>
+                                <div className="flex items-center gap-2">
+                                   <div className="font-semibold text-sm text-green-900 dark:text-green-100 truncate max-w-[100px]">{token.symbol}</div>
+                                   {token.possible_spam && <div className="text-[9px] bg-red-100 text-red-600 px-1.5 rounded border border-red-200 flex items-center gap-0.5"><WarningTriangle className="w-2.5 h-2.5"/> SPAM</div>}
+                                </div>
                                 <div className="text-xs text-green-700 dark:text-green-400/80">{parseFloat(formatUnits(BigInt(token.balance), token.decimals)).toFixed(4)}</div>
                             </div>
                         </div>
-                        <button className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-green-300 text-green-700 hover:bg-green-100 dark:bg-green-900/40 dark:border-green-700 dark:text-green-400 transition-colors">Deposit</button>
+                        <button 
+                          onClick={() => handleDeposit(token)}
+                          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-green-300 text-green-700 hover:bg-green-100 dark:bg-green-900/40 dark:border-green-700 dark:text-green-400 transition-colors flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3"/> Deposit
+                        </button>
                     </div>
                 ))
             )}

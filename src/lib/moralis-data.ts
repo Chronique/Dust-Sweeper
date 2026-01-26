@@ -2,7 +2,6 @@
 
 const MORALIS_API_KEY = process.env.NEXT_PUBLIC_MORALIS_API_KEY;
 
-// Interface response dari Moralis
 export interface MoralisToken {
   token_address: string;
   name: string;
@@ -11,6 +10,7 @@ export interface MoralisToken {
   thumbnail?: string | null;
   decimals: number;
   balance: string;
+  possible_spam: boolean; // [BARU] Field deteksi spam
 }
 
 export const fetchMoralisTokens = async (address: string) => {
@@ -20,8 +20,7 @@ export const fetchMoralisTokens = async (address: string) => {
   }
 
   try {
-    // URL untuk Base Sepolia
-    // Jika mau Mainnet, ganti 'base%20sepolia' jadi 'base'
+    // Gunakan 'base' untuk Mainnet
     const chain = "base"; 
     const url = `https://deep-index.moralis.io/api/v2.2/${address}/erc20?chain=${chain}`;
 
@@ -36,7 +35,7 @@ export const fetchMoralisTokens = async (address: string) => {
     if (!response.ok) throw new Error("Failed to fetch Moralis data");
 
     const data = await response.json();
-    return data as MoralisToken[]; // Moralis mengembalikan array token langsung
+    return data as MoralisToken[]; 
   } catch (error) {
     console.error("Moralis Fetch Error:", error);
     return [];
