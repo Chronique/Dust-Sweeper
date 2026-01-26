@@ -1,18 +1,24 @@
 import { createSmartAccountClient, type SmartAccountClient } from "permissionless";
 import { createPimlicoClient } from "permissionless/clients/pimlico";
-import { createPublicClient, http, type WalletClient, type Transport, type Chain, type LocalAccount, type Address } from "viem";
+import { 
+  createPublicClient, 
+  http, 
+  type WalletClient, 
+  type Transport, 
+  type Chain, 
+  type LocalAccount 
+} from "viem";
 import { baseSepolia } from "viem/chains"; 
 import { toCoinbaseSmartAccount } from "viem/account-abstraction";
 
 const ENTRYPOINT_ADDRESS_V06 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
+const pimlicoApiKey = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
+const PIMLICO_URL = `https://api.pimlico.io/v2/84532/rpc?apikey=${pimlicoApiKey}`;
 
 export const publicClient = createPublicClient({
   chain: baseSepolia,
   transport: http("https://sepolia.base.org"), 
 });
-
-const pimlicoApiKey = process.env.NEXT_PUBLIC_PIMLICO_API_KEY;
-const PIMLICO_URL = `https://api.pimlico.io/v2/84532/rpc?apikey=${pimlicoApiKey}`;
 
 export const pimlicoClient = createPimlicoClient({
   transport: http(PIMLICO_URL),
@@ -25,68 +31,65 @@ export const pimlicoClient = createPimlicoClient({
 export const getCoinbaseSmartAccountClient = async (walletClient: WalletClient) => {
   if (!walletClient.account) throw new Error("Wallet not detected");
 
-  // 1. Definisikan Owner sebagai LocalAccount MURNI
-  // Kita bypass semua deteksi otomatis Viem
-  const customOwner: LocalAccount = {
+  // WRAPPER OWNER: PENJAGA GERBANG
+  const bridgeOwner: LocalAccount = {
     address: walletClient.account.address,
     publicKey: walletClient.account.address,
     source: 'custom',
-    type: 'local', // 👈 KUNCI: Paksa jadi local agar logic kita jalan
+    type: 'local', 
 
-    // ⛔ BLOKIR TOTAL RAW SIGN
+    // A. JALUR RAW (Cadangan)
     signMessage: async ({ message }: { message: any }) => {
-       console.error("⛔ BLOCKED: Library tried to Raw Sign!");
-       throw new Error("Smart Wallets cannot Raw Sign. Logic Error.");
+       console.log("✍️ [Bridge] Forwarding Raw Sign...");
+       return walletClient.signMessage({ 
+         message,
+         account: walletClient.account! 
+       });
     },
 
-    // ⛔ BLOKIR SIGN TRANSACTION BIASA
-    signTransaction: async (tx: any) => {
-       console.error("⛔ BLOCKED: Library tried to Sign Transaction directly!");
-       throw new Error("Smart Wallets cannot Sign Transaction directly.");
-    },
-
-    // ✅ PAKSA LEWAT SINI (EIP-712)
+    // B. JALUR TYPED DATA (UTAMA) - DENGAN SANITIZER
     signTypedData: async (parameters: any) => {
-      console.log("✅ SUCCESS: Intercepted Sign Request -> Forwarding to Wallet as EIP-712");
+      console.log("✍️ [Bridge] Forwarding Typed Data (EIP-712)...");
       
-      const params = parameters;
-      
-      // Inject ChainID Base Sepolia jika kosong
-      if (params.domain && !params.domain.chainId) {
-         params.domain.chainId = baseSepolia.id; 
+      const { domain, types, primaryType, message } = parameters;
+
+      // 1. CEK FATAL ERROR: Types tidak boleh kosong!
+      if (!types || Object.keys(types).length === 0) {
+          console.error("❌ CRITICAL: 'types' object is missing/empty!", parameters);
+          throw new Error("Invalid EIP-712 Request: Missing Types");
       }
 
-      // Panggil Wallet Asli (Extension) dengan format yang benar
+      // 2. CEK CHAIN ID
+      if (domain && !domain.chainId) {
+         domain.chainId = baseSepolia.id; 
+      }
+
+      // 3. KIRIM DATA BERSIH (CLONE OBJECT)
+      // Ini mencegah error "reading types of null" di wallet extension
       return walletClient.signTypedData({
         account: walletClient.account!,
-        domain: params.domain,
-        types: params.types,
-        primaryType: params.primaryType,
-        message: params.message
+        domain: { ...domain },           
+        types: { ...types },             
+        primaryType: primaryType,
+        message: { ...message }          
       });
+    },
+
+    // C. Stub
+    signTransaction: async (tx: any) => {
+        throw new Error("Smart Account cannot sign transactions directly. Use UserOp.");
     }
   } as any;
 
-  console.log("🔍 [CSW] Creating Account with Custom Owner...");
-
-  // 2. Buat Coinbase Account
+  // SETUP AKUN
   const coinbaseAccount = await toCoinbaseSmartAccount({
     client: publicClient,
-    owners: [customOwner], // Masukkan owner modifikasi kita
+    owners: [bridgeOwner], 
     nonce: 0n, 
     version: "1.1" 
   });
 
-  // 3. MONKEY PATCH (Jaga-jaga)
-  // Kita timpa lagi fungsi sign di hasil akhir smart account biar yakin 100%
-  // @ts-ignore
-  coinbaseAccount.signMessage = customOwner.signMessage;
-  // @ts-ignore
-  coinbaseAccount.signTypedData = customOwner.signTypedData;
-
-  console.log("✅ [CSW] Account Created:", coinbaseAccount.address);
-
-  // 4. Return Client
+  // RETURN CLIENT
   return createSmartAccountClient({
     account: coinbaseAccount,
     chain: baseSepolia,
