@@ -12,7 +12,6 @@ import { SimpleToast } from "~/components/ui/simple-toast";
 import { fetchMoralisTokens, type MoralisToken } from "~/lib/moralis-data";
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; 
-// [UBAH DI SINI] Tampilkan 10 token per halaman
 const ITEMS_PER_PAGE = 10; 
 
 const TokenLogo = ({ token }: { token: any }) => {
@@ -250,23 +249,38 @@ export const VaultView = () => {
           ))}
         </div>
         
-        {/* Pagination Controls */}
+        {/* [UBAH DI SINI] PAGINATION: Angka 1, 2, 3 ... */}
         {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4 pt-4">
+            <div className="flex items-center justify-center gap-2 pt-4 overflow-x-auto">
               <button 
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                className="p-2 rounded-full hover:bg-zinc-100 disabled:opacity-30"
+                className="p-2 rounded-lg hover:bg-zinc-100 disabled:opacity-30"
               >
                 <NavArrowLeft className="w-5 h-5" />
               </button>
-              <span className="text-sm font-medium text-zinc-500">
-                Page {currentPage} of {totalPages}
-              </span>
+              
+              {/* Generate Page Numbers */}
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${
+                      currentPage === page 
+                        ? "bg-blue-600 text-white shadow-md scale-110" 
+                        : "bg-transparent text-zinc-500 hover:bg-zinc-100"
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+
               <button 
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                className="p-2 rounded-full hover:bg-zinc-100 disabled:opacity-30"
+                className="p-2 rounded-lg hover:bg-zinc-100 disabled:opacity-30"
               >
                 <NavArrowRight className="w-5 h-5" />
               </button>

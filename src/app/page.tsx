@@ -6,7 +6,7 @@ const frame = {
   version: "next",
   imageUrl: METADATA.bannerImageUrl,
   button: {
-    title: "Open",
+    title: "Nyawit",
     action: {
       type: "launch_frame",
       name: METADATA.name,

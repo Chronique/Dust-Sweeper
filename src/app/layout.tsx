@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "~/app/globals.css";
 import "@worldcoin/mini-apps-ui-kit-react/styles.css";
 import { Providers } from "~/app/providers";
@@ -13,6 +13,14 @@ export const metadata: Metadata = {
     url: METADATA.homeUrl,
     siteName: METADATA.name
   },
+};
+
+// [BARU]: Konfigurasi Viewport untuk mematikan Zoom
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default async function RootLayout({
