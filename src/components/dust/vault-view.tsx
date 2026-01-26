@@ -6,17 +6,15 @@ import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher";
 import { publicClient } from "~/lib/simple-smart-account"; 
 import { alchemy } from "~/lib/alchemy";
 import { formatEther, formatUnits, encodeFunctionData, erc20Abi, type Address } from "viem";
-// [UBAH DI SINI] Import 'base' untuk Mainnet
 import { base } from "viem/chains"; 
-import { Copy, Wallet, Rocket, Check, Dollar, NavArrowLeft, NavArrowRight, Refresh, WarningCircle, Gas, User } from "iconoir-react";
+import { Copy, Wallet, Rocket, Check, Dollar, Refresh, Gas, User, NavArrowLeft, NavArrowRight } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 import { fetchMoralisTokens, type MoralisToken } from "~/lib/moralis-data";
 
-// [UBAH DI SINI] Address USDC di Base Mainnet
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; 
-const ITEMS_PER_PAGE = 5; 
+// [UBAH DI SINI] Tampilkan 10 token per halaman
+const ITEMS_PER_PAGE = 10; 
 
-// ... (Komponen TokenLogo TETAP SAMA) ...
 const TokenLogo = ({ token }: { token: any }) => {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => { setSrc(token.logo || null); }, [token]);
@@ -53,8 +51,8 @@ export const VaultView = () => {
   const [ethBalance, setEthBalance] = useState("0");
   const [usdcBalance, setUsdcBalance] = useState<any>(null);
   
-  const [tokens, setTokens] = useState<any[]>([]); // Vault Tokens (Alchemy)
-  const [ownerTokens, setOwnerTokens] = useState<MoralisToken[]>([]); // Owner Tokens (Moralis)
+  const [tokens, setTokens] = useState<any[]>([]); 
+  const [ownerTokens, setOwnerTokens] = useState<MoralisToken[]>([]); 
   const [loadingOwnerTokens, setLoadingOwnerTokens] = useState(false);
 
   const [isDeployed, setIsDeployed] = useState(false);
@@ -64,7 +62,6 @@ export const VaultView = () => {
   
   const [currentPage, setCurrentPage] = useState(1);
 
-  // 1. Fetch Vault Data (Alchemy)
   const fetchVaultData = async () => {
     if (!walletClient) return;
     setLoading(true);
@@ -114,18 +111,12 @@ export const VaultView = () => {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  // 2. Fetch Owner Data (Moralis)
   const fetchOwnerData = async () => {
     if (!ownerAddress) return;
     setLoadingOwnerTokens(true);
     try {
         const data = await fetchMoralisTokens(ownerAddress);
-        // Filter saldo > 0
         const activeTokens = data.filter(t => BigInt(t.balance) > 0n);
-        
-        // TODO: Jika ingin filter likuiditas pakai lib/price, lakukan di sini:
-        // const pricedTokens = await Promise.all(activeTokens.map(async (t) => { ...cek price... }));
-        
         setOwnerTokens(activeTokens);
     } catch (e) {
         console.error("Gagal fetch Moralis:", e);
@@ -137,7 +128,6 @@ export const VaultView = () => {
   useEffect(() => { fetchVaultData(); }, [walletClient, connector?.id]); 
   useEffect(() => { if(ownerAddress) fetchOwnerData(); }, [ownerAddress]);
 
-  // [UBAH DI SINI] Ensure Base Mainnet
   const ensureNetwork = async () => {
       if (chainId !== base.id) {
           try {
@@ -156,7 +146,7 @@ export const VaultView = () => {
     if (!window.confirm(`Withdraw ${name} to main wallet?`)) return;
 
     try {
-      await ensureNetwork(); // Cek Mainnet
+      await ensureNetwork(); 
       setActionLoading(`Withdrawing ${name}...`); 
       
       const transferData = encodeFunctionData({
@@ -176,7 +166,7 @@ export const VaultView = () => {
           abi: executeAbi,
           functionName: 'execute',
           args: [token.contractAddress as Address, 0n, transferData],
-          chainId: base.id // Force Mainnet
+          chainId: base.id 
       });
 
       console.log("Withdraw Hash:", txHash);
@@ -194,10 +184,9 @@ export const VaultView = () => {
   const currentTokens = tokens.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
   return (
-    <div className="pb-20 space-y-6 relative min-h-[50vh]">
+    <div className="pb-28 space-y-6 relative min-h-[50vh]">
       <SimpleToast message={toast?.msg || null} type={toast?.type} onClose={() => setToast(null)} />
 
-      {/* ... (ACTION LOADING OVERLAY & HEADER CARD - Sama seperti sebelumnya) ... */}
       {actionLoading && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
            <div className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
@@ -209,7 +198,6 @@ export const VaultView = () => {
 
       {/* HEADER CARD */}
       <div className="p-5 bg-zinc-900 text-white rounded-2xl shadow-lg relative overflow-hidden">
-        {/* ... (Header content sama seperti file asli) ... */}
         <div className={`absolute top-4 right-4 text-[10px] px-2 py-1 rounded-full border font-medium flex items-center gap-1 ${isDeployed ? "bg-green-500/20 border-green-500 text-green-400" : "bg-orange-500/20 border-orange-500 text-orange-400"}`}>
            {isDeployed ? <Check className="w-3 h-3" /> : <Rocket className="w-3 h-3" />}
            {isDeployed ? "Active" : "Inactive"}
@@ -223,10 +211,8 @@ export const VaultView = () => {
                <Copy className="w-4 h-4 hover:text-blue-400" />
             </button>
         </div>
-        {/* WITHDRAW SECTION */}
         <div className="mt-4 space-y-3">
-             {/* ... (ETH & USDC Display sama seperti file asli) ... */}
-              <div className="flex items-center justify-between bg-zinc-800/50 p-3 rounded-xl border border-zinc-700/50">
+             <div className="flex items-center justify-between bg-zinc-800/50 p-3 rounded-xl border border-zinc-700/50">
                 <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-zinc-400"><Gas className="w-5 h-5" /></div>
                     <div><div className="text-xs text-zinc-400">Gas Reserve (ETH)</div><div className="text-lg font-bold">{parseFloat(ethBalance).toFixed(5)}</div></div>
@@ -263,34 +249,57 @@ export const VaultView = () => {
             </div>
           ))}
         </div>
+        
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4 pt-4">
+              <button 
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                className="p-2 rounded-full hover:bg-zinc-100 disabled:opacity-30"
+              >
+                <NavArrowLeft className="w-5 h-5" />
+              </button>
+              <span className="text-sm font-medium text-zinc-500">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button 
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                className="p-2 rounded-full hover:bg-zinc-100 disabled:opacity-30"
+              >
+                <NavArrowRight className="w-5 h-5" />
+              </button>
+            </div>
+        )}
       </div>
 
-      {/* --- OWNER ASSETS (MORALIS SCAN) --- */}
+      {/* --- OWNER ASSETS (FIXED COLORS) --- */}
       <div>
         <div className="flex items-center justify-between px-1 mb-2 mt-6 border-t pt-4 border-zinc-800">
             <h3 className="font-semibold text-lg flex items-center gap-2">
-                <User className="w-5 h-5 text-green-500"/> Owner Wallet
+                <User className="w-5 h-5 text-green-600 dark:text-green-500"/> Owner Wallet
             </h3>
-            <button onClick={fetchOwnerData} className="text-xs text-green-500 hover:underline">Scan Moralis</button>
+            <button onClick={fetchOwnerData} className="text-xs text-green-600 dark:text-green-500 hover:underline">Scan Moralis</button>
         </div>
         <div className="space-y-2">
             {loadingOwnerTokens ? (
                 <div className="text-center py-4 text-zinc-500 animate-pulse text-sm">Scanning Mainnet...</div>
             ) : ownerTokens.length === 0 ? (
-                <div className="text-center py-4 text-zinc-400 text-sm bg-zinc-900/50 rounded-xl">No assets found in Owner Wallet.</div>
+                <div className="text-center py-4 text-zinc-400 text-sm bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800">No assets found in Owner Wallet.</div>
             ) : (
                 ownerTokens.map((token, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 border border-green-500/20 rounded-xl bg-green-500/5 shadow-sm">
+                    <div key={i} className="flex items-center justify-between p-3 border border-green-200 dark:border-green-800 rounded-xl bg-green-50/80 dark:bg-green-900/10 shadow-sm">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden">
-                                {token.logo ? <img src={token.logo} className="w-full h-full object-cover"/> : <div className="text-xs font-bold text-green-500">?</div>}
+                            <div className="w-10 h-10 rounded-full bg-white dark:bg-zinc-800 flex items-center justify-center overflow-hidden border border-green-100 dark:border-green-900">
+                                {token.logo ? <img src={token.logo} className="w-full h-full object-cover"/> : <div className="text-xs font-bold text-green-600 dark:text-green-500">?</div>}
                             </div>
                             <div>
-                                <div className="font-semibold text-sm text-green-100">{token.symbol}</div>
-                                <div className="text-xs text-green-400/70">{parseFloat(formatUnits(BigInt(token.balance), token.decimals)).toFixed(4)}</div>
+                                <div className="font-semibold text-sm text-green-900 dark:text-green-100">{token.symbol}</div>
+                                <div className="text-xs text-green-700 dark:text-green-400/80">{parseFloat(formatUnits(BigInt(token.balance), token.decimals)).toFixed(4)}</div>
                             </div>
                         </div>
-                        <button className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-900/50 text-green-400 border border-green-500/30">Deposit</button>
+                        <button className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white border border-green-300 text-green-700 hover:bg-green-100 dark:bg-green-900/40 dark:border-green-700 dark:text-green-400 transition-colors">Deposit</button>
                     </div>
                 ))
             )}

@@ -85,7 +85,7 @@ export function TopBar() {
           <div className="relative z-10 -ml-10 pl-12 flex flex-col justify-center">
               <h1 className="text-2xl font-black tracking-tighter text-zinc-800 dark:text-white leading-none
                              animate-in slide-in-from-left-8 fade-in duration-1000 fill-mode-forwards">
-                NYAWIT NIH ORANG
+                NYAWIT
               </h1>
               <p className="text-[10px] font-bold text-blue-600 tracking-widest uppercase
                             animate-in slide-in-from-left-10 fade-in duration-1000 delay-200 fill-mode-forwards">
