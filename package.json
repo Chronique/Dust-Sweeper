@@ -35,14 +35,14 @@
     "moralis": "^2.27.2",
     "next": "^16.0.10",
     "ox": "^0.9.4",
-    "permissionless": "^0.3.2",
+    "permissionless": "^0.3.4",
     "preact": "^10.28.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "siwe": "^3.0.0",
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
-    "viem": "^2.44.4",
+    "viem": "^2.45.0",
     "wagmi": "^3.4.1"
   },
   "devDependencies": {
