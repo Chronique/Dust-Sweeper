@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount, useWalletClient } from "wagmi";
+import { useWalletClient } from "wagmi"; // useAccount dihapus jika tidak dipakai, atau biarkan
 import { Copy, Refresh, WarningTriangle, Cube, Wallet } from "iconoir-react";
 
 import { getZeroDevSmartAccountClient, publicClient as zeroDevPublicClient } from "~/lib/zerodev-smart-account";
@@ -23,17 +23,8 @@ export const DustDepositView = () => {
   const [loading, setLoading] = useState(false);
 
   // --- 1. DETEKSI SISTEM (MODE) ---
-  // Jika context belum siap, kita anggap loading dulu
-  if (!frameContext) {
-    return (
-      <div className="max-w-md mx-auto py-20 text-center space-y-4">
-        <div className="w-8 h-8 border-4 border-zinc-300 border-t-blue-500 rounded-full animate-spin mx-auto"></div>
-        <p className="text-xs text-zinc-500">Detecting Environment...</p>
-      </div>
-    );
-  }
-
-  const { isInMiniApp } = frameContext;
+  // Gunakan optional chaining dan default value agar tidak error saat frameContext null
+  const isInMiniApp = frameContext?.isInMiniApp ?? false;
   
   // LOGIKA UTAMA:
   // Farcaster -> Coinbase (System B)
@@ -41,6 +32,7 @@ export const DustDepositView = () => {
   const mode = isInMiniApp ? "COINBASE" : "ZERODEV";
 
   // --- 2. FUNGSI LOAD DATA ---
+  // Definisikan fungsi ini SEBELUM conditional return
   const refreshStatus = async () => {
       if (!walletClient) return;
       setLoading(true);
@@ -67,10 +59,27 @@ export const DustDepositView = () => {
       finally { setLoading(false); }
   };
 
+  // --- 3. EFFECT ---
+  // Panggil useEffect SEBELUM conditional return
   useEffect(() => {
-    refreshStatus();
-  }, [walletClient, mode]);
+    // Hanya jalankan jika context sudah siap (opsional, tapi disarankan)
+    if (frameContext) {
+        refreshStatus();
+    }
+  }, [walletClient, mode, frameContext]);
 
+  // --- 4. CONDITIONAL RENDERING (LOADING STATE) ---
+  // Pindahkan pengecekan loading ke sini (SETELAH semua hooks)
+  if (!frameContext) {
+    return (
+      <div className="max-w-md mx-auto py-20 text-center space-y-4">
+        <div className="w-8 h-8 border-4 border-zinc-300 border-t-blue-500 rounded-full animate-spin mx-auto"></div>
+        <p className="text-xs text-zinc-500">Detecting Environment...</p>
+      </div>
+    );
+  }
+
+  // --- 5. RENDER UTAMA ---
   return (
     <div className="max-w-md mx-auto pb-24">
        

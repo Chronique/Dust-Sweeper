@@ -15,7 +15,35 @@ import { getCoinbaseSmartAccountClient } from "~/lib/coinbase-smart-account";
 import { formatEther } from "viem";
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; 
-const ITEMS_PER_PAGE = 10; // [UBAH] Menjadi 10 item per halaman
+const ITEMS_PER_PAGE = 10; 
+
+// --- HELPER PAGINATION PINTAR ---
+// Menghasilkan array seperti [1, 2, '...', 5, 6, 7, '...', 20]
+const generatePagination = (current: number, total: number) => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const pages: (number | string)[] = [];
+  pages.push(1); // Selalu tampilkan halaman 1
+
+  if (current > 3) pages.push("..."); // Ellipsis kiri
+
+  // Tampilkan sekitar halaman aktif
+  let start = Math.max(2, current - 1);
+  let end = Math.min(total - 1, current + 1);
+
+  // Penyesuaian jika di ujung
+  if (current <= 3) end = 4;
+  if (current >= total - 2) start = total - 3;
+
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+
+  if (current < total - 2) pages.push("..."); // Ellipsis kanan
+  
+  pages.push(total); // Selalu tampilkan halaman terakhir
+  return pages;
+};
 
 // Komponen Logo Token
 const TokenLogo = ({ token }: { token: any }) => {
@@ -51,7 +79,9 @@ export const VaultView = () => {
   const { switchChainAsync } = useSwitchChain();     
   const frameContext = useFrameContext();
   
-  // Deteksi Mode
+  // --- LOGIKA FACTORY / MODE ---
+  // Jika di dalam Farcaster (MiniApp) -> Gunakan COINBASE (Smart Wallet Factory)
+  // Jika di luar (Browser/Base App) -> Gunakan ZERODEV (Kernel Factory)
   const isInMiniApp = frameContext?.isInMiniApp ?? false;
   const mode = isInMiniApp ? "COINBASE" : "ZERODEV";
 
@@ -69,8 +99,8 @@ export const VaultView = () => {
   const [toast, setToast] = useState<{ msg: string, type: "success" | "error" } | null>(null);
   
   // State Pagination
-  const [currentPage, setCurrentPage] = useState(1);       // Untuk Vault
-  const [currentOwnerPage, setCurrentOwnerPage] = useState(1); // [BARU] Untuk Owner Wallet
+  const [currentPage, setCurrentPage] = useState(1);       
+  const [currentOwnerPage, setCurrentOwnerPage] = useState(1); 
 
   // 1. FETCH VAULT DATA (Alchemy)
   const fetchVaultData = async () => {
@@ -79,6 +109,7 @@ export const VaultView = () => {
     try {
       let addr, code, bal;
 
+      // Pemilihan Factory Berdasarkan Mode
       if (mode === "ZERODEV") {
           const client = await getZeroDevSmartAccountClient(walletClient);
           addr = client.account.address;
@@ -96,6 +127,8 @@ export const VaultView = () => {
 
       // Fetch Token Vault
       const balances = await alchemy.core.getTokenBalances(addr);
+      
+      // Filter token dengan balance > 0
       const nonZeroTokens = balances.tokenBalances.filter(t => 
           t.tokenBalance && BigInt(t.tokenBalance) > 0n
       );
@@ -156,7 +189,7 @@ export const VaultView = () => {
         });
         
         setOwnerTokens(activeTokens);
-        setCurrentOwnerPage(1); // Reset page saat data baru
+        setCurrentOwnerPage(1); 
 
     } catch (e) {
         console.error("Gagal fetch Moralis:", e);
@@ -222,14 +255,13 @@ export const VaultView = () => {
 
   const handleDeposit = async (token: MoralisToken) => {
     if (!walletClient || !ownerAddress || !vaultAddress) return;
-    
-    // Konfirmasi User
     if (!window.confirm(`Deposit ${token.symbol} ke Vault?`)) return;
 
     try {
       await ensureNetwork();
       setActionLoading(`Depositing ${token.symbol}...`);
 
+      // Deposit = Transfer dari Owner Wallet ke Vault Address
       const txHash = await writeContractAsync({
         address: token.token_address as Address, 
         abi: erc20Abi,
@@ -241,10 +273,8 @@ export const VaultView = () => {
       console.log("Deposit Hash:", txHash);
       setToast({ msg: "Deposit Sent! Updating balances...", type: "success" });
 
-      // [PENTING] Tunggu lebih lama (10 detik) karena Moralis/Alchemy butuh waktu indexing
       await new Promise(resolve => setTimeout(resolve, 10000));
       
-      // Refresh Data Paralel
       await Promise.all([
           fetchVaultData(),
           fetchOwnerData()
@@ -258,11 +288,10 @@ export const VaultView = () => {
     }
   };
   
-  // PAGINATION LOGIC: VAULT
+  // PAGINATION LOGIC
   const totalPages = Math.ceil(tokens.length / ITEMS_PER_PAGE);
   const currentTokens = tokens.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
 
-  // PAGINATION LOGIC: OWNER [BARU]
   const totalOwnerPages = Math.ceil(ownerTokens.length / ITEMS_PER_PAGE);
   const currentOwnerTokens = ownerTokens.slice((currentOwnerPage - 1) * ITEMS_PER_PAGE, currentOwnerPage * ITEMS_PER_PAGE);
 
@@ -323,7 +352,12 @@ export const VaultView = () => {
         </div>
         
         <div className="space-y-2 min-h-[200px]">
-          {tokens.length === 0 ? <div className="text-center py-10 text-zinc-400 text-sm border border-dashed border-zinc-700 rounded-xl">Vault is empty.</div> : currentTokens.map((token, i) => (
+          {/* Tampilkan pesan empty HANYA jika list kosong DAN tidak ada USDC */}
+          {tokens.length === 0 ? (
+             <div className="text-center py-10 text-zinc-400 text-sm border border-dashed border-zinc-700 rounded-xl">
+               {usdcBalance ? "No other assets found." : "Vault is empty."}
+             </div>
+          ) : currentTokens.map((token, i) => (
             <div key={i} className="flex items-center justify-between p-3 border border-zinc-100 dark:border-zinc-800 rounded-xl bg-white dark:bg-zinc-900 shadow-sm animate-in slide-in-from-bottom-2">
                 <div className="flex items-center gap-3 overflow-hidden">
                     <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center shrink-0 overflow-hidden"><TokenLogo token={token} /></div>
@@ -334,26 +368,21 @@ export const VaultView = () => {
           ))}
         </div>
         
-        {/* PAGINATION VAULT */}
+        {/* PAGINATION VAULT (COMPACT) */}
         {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2 pt-6 pb-2 overflow-x-auto">
-              <button 
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"
-              >
-                <NavArrowLeft className="w-4 h-4" />
-              </button>
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"><NavArrowLeft className="w-4 h-4" /></button>
               
               <div className="flex items-center gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                {generatePagination(currentPage, totalPages).map((page, idx) => (
                   <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
+                    key={idx}
+                    disabled={typeof page !== 'number'}
+                    onClick={() => typeof page === 'number' && setCurrentPage(page)}
                     className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all border ${
                       currentPage === page 
                         ? "bg-blue-600 text-white border-blue-600 shadow-md scale-110" 
-                        : "bg-white dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50"
+                        : typeof page === 'number' ? "bg-white dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50" : "border-transparent text-zinc-400"
                     }`}
                   >
                     {page}
@@ -361,18 +390,12 @@ export const VaultView = () => {
                 ))}
               </div>
 
-              <button 
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"
-              >
-                <NavArrowRight className="w-4 h-4" />
-              </button>
+              <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"><NavArrowRight className="w-4 h-4" /></button>
             </div>
         )}
       </div>
 
-      {/* --- OWNER ASSETS (WITH PAGINATION 10 ITEMS) --- */}
+      {/* --- OWNER ASSETS (WITH PAGINATION) --- */}
       <div>
         <div className="flex items-center justify-between px-1 mb-2 mt-6 border-t pt-4 border-zinc-800">
             <h3 className="font-semibold text-lg flex items-center gap-2">
@@ -415,26 +438,21 @@ export const VaultView = () => {
             )}
         </div>
 
-        {/* PAGINATION OWNER */}
+        {/* PAGINATION OWNER (COMPACT) */}
         {totalOwnerPages > 1 && (
             <div className="flex items-center justify-center gap-2 pt-6 pb-2 overflow-x-auto">
-              <button 
-                disabled={currentOwnerPage === 1}
-                onClick={() => setCurrentOwnerPage(p => Math.max(1, p - 1))}
-                className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"
-              >
-                <NavArrowLeft className="w-4 h-4" />
-              </button>
+              <button disabled={currentOwnerPage === 1} onClick={() => setCurrentOwnerPage(p => Math.max(1, p - 1))} className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"><NavArrowLeft className="w-4 h-4" /></button>
               
               <div className="flex items-center gap-1">
-                {Array.from({ length: totalOwnerPages }, (_, i) => i + 1).map((page) => (
+                {generatePagination(currentOwnerPage, totalOwnerPages).map((page, idx) => (
                   <button
-                    key={page}
-                    onClick={() => setCurrentOwnerPage(page)}
+                    key={idx}
+                    disabled={typeof page !== 'number'}
+                    onClick={() => typeof page === 'number' && setCurrentOwnerPage(page)}
                     className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold transition-all border ${
                       currentOwnerPage === page 
                         ? "bg-green-600 text-white border-green-600 shadow-md scale-110" 
-                        : "bg-white dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50"
+                        : typeof page === 'number' ? "bg-white dark:bg-zinc-800 text-zinc-500 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50" : "border-transparent text-zinc-400"
                     }`}
                   >
                     {page}
@@ -442,13 +460,7 @@ export const VaultView = () => {
                 ))}
               </div>
 
-              <button 
-                disabled={currentOwnerPage === totalOwnerPages}
-                onClick={() => setCurrentOwnerPage(p => Math.min(totalOwnerPages, p + 1))}
-                className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"
-              >
-                <NavArrowRight className="w-4 h-4" />
-              </button>
+              <button disabled={currentOwnerPage === totalOwnerPages} onClick={() => setCurrentOwnerPage(p => Math.min(totalOwnerPages, p + 1))} className="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 disabled:opacity-30 transition-all"><NavArrowRight className="w-4 h-4" /></button>
             </div>
         )}
       </div>
