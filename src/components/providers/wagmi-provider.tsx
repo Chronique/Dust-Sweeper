@@ -1,36 +1,39 @@
 "use client";
 
-import { createConfig, http, WagmiProvider } from "wagmi";
-import { base, baseSepolia } from "wagmi/chains";
+import { createConfig, http, WagmiProvider as WagmiProviderLib } from "wagmi";
+import { base } from "viem/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { coinbaseWallet, injected } from "wagmi/connectors";
-import type { ReactNode } from "react";
 
+// 1. Setup Query Client
 const queryClient = new QueryClient();
 
-const config = createConfig({
-  // 🔥 Default ke Base Sepolia (Urutan 0)
-  chains: [baseSepolia, base], 
+// 2. Setup Wagmi Config
+const wagmiConfig = createConfig({
+  chains: [base],
   transports: {
-    [baseSepolia.id]: http(),
     [base.id]: http(),
   },
   connectors: [
-    // 🔥 Preference 'all' membiarkan user memilih (Mobile/Extension/Smart Wallet)
-    coinbaseWallet({
-      appName: "Nyawit",
-      preference: "all" as any, 
+    // Prioritas 1: Coinbase Wallet (Untuk Base App)
+    coinbaseWallet({ 
+        appName: "Nyawit",
+        // [FIX] Sesuaikan format preference dengan tipe object yang diminta error
+        preference: {
+            options: "smartWalletOnly" 
+        } as any // Gunakan 'as any' untuk keamanan jika type definition library tidak stabil
     }),
-    injected(), // Fallback untuk MetaMask biasa
+    // Prioritas 2: Injected (Untuk Farcaster / Metamask / Rabby)
+    injected(),
   ],
 });
 
-export function Providers({ children }: { children: ReactNode }) {
+export const WagmiProvider = ({ children }: { children: React.ReactNode }) => {
   return (
-    <WagmiProvider config={config}>
+    <WagmiProviderLib config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         {children}
       </QueryClientProvider>
-    </WagmiProvider>
+    </WagmiProviderLib>
   );
-}
+};

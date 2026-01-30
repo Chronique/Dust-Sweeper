@@ -1,29 +1,14 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import FrameProvider from "~/components/providers/frame-provider";
-
-// 🔥 FIX: Ambil 'mod.Providers' (karena export-nya bernama Providers)
-const WagmiProvider = dynamic(
-  () => import("~/components/providers/wagmi-provider").then((mod) => mod.Providers),
-  {
-    ssr: false,
-  }
-);
-
-const ErudaProvider = dynamic(
-  () => import("~/components/providers/eruda-provider"),
-  {
-    ssr: false,
-  }
-);
+import { WagmiProvider } from "~/components/providers/wagmi-provider";
+import { FrameProvider } from "~/components/providers/frame-provider";
+// import { FrameProvider } from "~/components/providers/frame-provider"; 
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider>
-      <FrameProvider>
-        {children}
-      </FrameProvider>
+      {/* FrameProvider dihapus, langsung children */}
+      {children}
     </WagmiProvider>
   );
 }

@@ -1,14 +1,13 @@
 import { type WalletClient } from "viem";
-import { getCoinbaseSmartAccountClient } from "./smart-account";
-// import { getZeroDevSmartAccountClient } from "./zerodev-smart-account"; // ❌ Disable ZeroDev
+// [FIX] Import dari file baru yang sudah distandarisasi
+import { getSmartAccountClient } from "./smart-account";
 
 export const getUnifiedSmartAccountClient = async (
   walletClient: WalletClient, 
   connectorId: string | undefined,
   accountIndex: bigint = 0n
 ) => {
-  // 🟢 FORCED: Selalu gunakan Coinbase Smart Account
-  // Ini akan memperbaiki masalah "Raw Sign" di Rabby dan menyamakan alamat Vault.
-  console.log("🔀 Switcher: Force Coinbase Smart Wallet (System B) for consistency");
-  return getCoinbaseSmartAccountClient(walletClient);
+  console.log("🔒 Smart Account: Initializing Unified Vault via Privy...");
+  // Langsung panggil fungsi standar kita
+  return getSmartAccountClient(walletClient);
 };

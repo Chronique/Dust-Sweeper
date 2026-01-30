@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { useWalletClient, useAccount, useWriteContract, useSwitchChain } from "wagmi";
-import { publicClient } from "~/lib/eoa-smart-account"; 
+// [FIX] Gunakan client unified baru & public client yang benar
+import { getUnifiedSmartAccountClient } from "~/lib/smart-account-switcher";
+import { publicClient } from "~/lib/smart-account"; 
 import { alchemy } from "~/lib/alchemy";
 import { formatUnits, encodeFunctionData, erc20Abi, type Address, formatEther } from "viem";
 import { base } from "viem/chains"; 
 import { Copy, Wallet, Rocket, Check, Dollar, Refresh, Gas, User, NavArrowLeft, NavArrowRight, Download, WarningTriangle } from "iconoir-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 import { fetchMoralisTokens, type MoralisToken } from "~/lib/moralis-data";
-import { useFrameContext } from "~/components/providers/frame-provider";
-import { getZeroDevSmartAccountClient } from "~/lib/zerodev-smart-account";
-import { getCoinbaseSmartAccountClient } from "~/lib/smart-account";
+
+// [FIX] Tidak perlu import zerodev atau coinbase spesifik lagi
+// import { getZeroDevSmartAccountClient } from "~/lib/zerodev-smart-account"; // HAPUS
+// import { getCoinbaseSmartAccountClient } from "~/lib/smart-account"; // HAPUS
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; 
 const ITEMS_PER_PAGE = 10; 
@@ -40,10 +43,9 @@ const TokenLogo = ({ token }: { token: any }) => {
 
 export const VaultView = () => {
   const { data: walletClient } = useWalletClient();
-  const { address: ownerAddress, connector, chainId } = useAccount(); 
+  const { address: ownerAddress, chainId } = useAccount(); 
   const { writeContractAsync } = useWriteContract(); 
   const { switchChainAsync } = useSwitchChain();     
-  const frameContext = useFrameContext();
   
   const [vaultAddress, setVaultAddress] = useState<string | null>(null);
   const [ethBalance, setEthBalance] = useState("0");
@@ -51,10 +53,11 @@ export const VaultView = () => {
   const [tokens, setTokens] = useState<any[]>([]); 
   const [ownerTokens, setOwnerTokens] = useState<MoralisToken[]>([]); 
   
-  // [FIXED] Tambahkan kembali state isDeployed yang hilang
+  // State Status
   const [isDeployed, setIsDeployed] = useState(false);
 
-  // Legacy Recovery State
+  // [OPTIONAL] Legacy Recovery State (Jika masih mau simpan fitur ini sementara)
+  // Kalau mau hapus total, hapus blok ini. Tapi saran saya simpan dulu buat jaga-jaga.
   const [legacyTokens, setLegacyTokens] = useState<any[]>([]);
   const [legacyAddress, setLegacyAddress] = useState<string | null>(null);
   const [isCheckingLegacy, setIsCheckingLegacy] = useState(false);
@@ -67,12 +70,13 @@ export const VaultView = () => {
   const [currentPage, setCurrentPage] = useState(1);       
   const [currentOwnerPage, setCurrentOwnerPage] = useState(1); 
 
-  // 1. FETCH MAIN VAULT (Coinbase Factory - SYSTEM BARU)
+  // 1. FETCH MAIN VAULT (Unified System)
   const fetchVaultData = async () => {
     if (!walletClient) return;
     setLoading(true);
     try {
-      const client = await getCoinbaseSmartAccountClient(walletClient);
+      // [FIX] Gunakan Unified Client (yang sudah otomatis handle Privy)
+      const client = await getUnifiedSmartAccountClient(walletClient, undefined);
       const addr = client.account.address;
 
       const bal = await publicClient.getBalance({ address: addr });
@@ -80,7 +84,6 @@ export const VaultView = () => {
 
       setVaultAddress(addr);
       setEthBalance(formatEther(bal));
-      // [FIXED] Update status deployed
       setIsDeployed(code !== undefined && code !== null && code !== "0x");
 
       const balances = await alchemy.core.getTokenBalances(addr);
@@ -113,36 +116,7 @@ export const VaultView = () => {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  // 2. [DARURAT] FETCH LEGACY VAULT (ZeroDev - SYSTEM LAMA)
-  const checkLegacyVault = async () => {
-    if (!walletClient) return;
-    setIsCheckingLegacy(true);
-    try {
-        const legacyClient = await getZeroDevSmartAccountClient(walletClient);
-        const addr = legacyClient.account.address;
-        setLegacyAddress(addr);
-
-        const balances = await alchemy.core.getTokenBalances(addr);
-        const foundTokens = balances.tokenBalances.filter(t => t.tokenBalance && BigInt(t.tokenBalance) > 0n);
-        
-        if (foundTokens.length > 0) {
-            const metadata = await Promise.all(foundTokens.map(t => alchemy.core.getTokenMetadata(t.contractAddress)));
-            const formatted = foundTokens.map((t, i) => ({
-                ...t,
-                symbol: metadata[i].symbol,
-                decimals: metadata[i].decimals || 18,
-                rawBalance: t.tokenBalance,
-                formattedBal: formatUnits(BigInt(t.tokenBalance || 0), metadata[i].decimals || 18)
-            }));
-            setLegacyTokens(formatted);
-        } else {
-            setLegacyTokens([]); 
-        }
-    } catch (e) { console.error("Legacy Check Error:", e); }
-    finally { setIsCheckingLegacy(false); }
-  };
-
-  // 3. FETCH OWNER DATA (Moralis)
+  // 2. FETCH OWNER DATA (Moralis)
   const fetchOwnerData = async () => {
     if (!ownerAddress) return;
     setLoadingOwnerTokens(true);
@@ -155,10 +129,17 @@ export const VaultView = () => {
     } catch (e) { console.error("Gagal fetch Moralis:", e); } finally { setLoadingOwnerTokens(false); }
   };
 
+  // [OPTIONAL] FUNGSI CEK LEGACY (Hanya jika masih ada file zerodev lama. Kalau sudah dihapus, hapus fungsi ini)
+  /*
+  const checkLegacyVault = async () => {
+      // ... (Kode lama zerodev bisa dihapus jika sudah yakin migrasi total)
+  };
+  */
+
   useEffect(() => { 
       if(walletClient) {
           fetchVaultData(); 
-          checkLegacyVault(); 
+          // checkLegacyVault(); // Disable dulu kalau library zerodev sudah dihapus
       }
   }, [walletClient]); 
   
@@ -171,7 +152,7 @@ export const VaultView = () => {
       }
   };
 
-  // WITHDRAW DARI VAULT UTAMA (NO RAW SIGN)
+  // WITHDRAW DARI VAULT UTAMA (Unified Client)
   const handleWithdraw = async (token?: any) => {
     if (!walletClient || !ownerAddress || !vaultAddress) return;
     if (!window.confirm(`Withdraw ${token?.symbol || "ETH"}?`)) return;
@@ -186,7 +167,8 @@ export const VaultView = () => {
         args: [ownerAddress as Address, BigInt(token.rawBalance)]
       });
 
-      const client = await getCoinbaseSmartAccountClient(walletClient);
+      // [FIX] Panggil unified client
+      const client = await getUnifiedSmartAccountClient(walletClient, undefined);
 
       const txHash = await client.sendUserOperation({
           account: client.account!,
@@ -206,43 +188,6 @@ export const VaultView = () => {
     } finally { setActionLoading(null); }
   };
 
-  // [DARURAT] RECOVER DARI VAULT LAMA (RAW SIGN OK)
-  const handleLegacyRecover = async (token: any) => {
-      if (!walletClient || !ownerAddress) return;
-      if (!window.confirm(`⚠️ RECOVERY MODE\n\nAnda akan menarik ${token.symbol} dari Vault Lama (ZeroDev).\nDompet Anda (Rabby/Metamask) mungkin menampilkan peringatan "Raw Sign" atau "Blind Sign".\n\nLanjutkan?`)) return;
-
-      try {
-          await ensureNetwork();
-          setActionLoading("Recovering Legacy Assets...");
-
-          const legacyClient = await getZeroDevSmartAccountClient(walletClient);
-          
-          const transferData = encodeFunctionData({
-            abi: erc20Abi,
-            functionName: "transfer",
-            args: [ownerAddress as Address, BigInt(token.rawBalance)]
-          });
-
-          const userOpHash = await legacyClient.sendUserOperation({
-              account: legacyClient.account!,
-              calls: [{ to: token.contractAddress as Address, value: 0n, data: transferData }]
-          });
-
-          console.log("Legacy Recovery Hash:", userOpHash);
-          setToast({ msg: "Recovery Sent!", type: "success" });
-
-          await new Promise(r => setTimeout(r, 8000));
-          await checkLegacyVault(); // Refresh Legacy
-          await fetchOwnerData(); // Refresh Owner
-
-      } catch (e: any) {
-          console.error(e);
-          setToast({ msg: "Recovery Failed: " + (e.shortMessage || e.message), type: "error" });
-      } finally {
-          setActionLoading(null);
-      }
-  };
-
   // DEPOSIT (Owner -> Main Vault)
   const handleDeposit = async (token: MoralisToken) => {
     if (!walletClient || !ownerAddress || !vaultAddress) return;
@@ -252,6 +197,7 @@ export const VaultView = () => {
       await ensureNetwork();
       setActionLoading(`Depositing ${token.symbol}...`);
 
+      // Gunakan writeContractAsync bawaan Wagmi (yang sudah di-hook ke Privy)
       const txHash = await writeContractAsync({
         address: token.token_address as Address, 
         abi: erc20Abi,
@@ -261,7 +207,7 @@ export const VaultView = () => {
       });
 
       setToast({ msg: "Deposit Sent! Updating...", type: "success" });
-      await new Promise(resolve => setTimeout(resolve, 10000));
+      await new Promise(resolve => setTimeout(resolve, 8000));
       await Promise.all([ fetchVaultData(), fetchOwnerData() ]);
 
     } catch (e: any) {
@@ -288,38 +234,14 @@ export const VaultView = () => {
         </div>
       )}
 
-      {/* --- PANEL DARURAT (LEGACY RECOVERY) --- */}
-      {legacyTokens.length > 0 && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 animate-in slide-in-from-top-5">
-              <div className="flex items-center gap-2 mb-3">
-                  <WarningTriangle className="w-5 h-5 text-red-600" />
-                  <h3 className="font-bold text-red-700 dark:text-red-400 text-sm">Legacy Assets Found</h3>
-              </div>
-              <p className="text-xs text-red-600/80 mb-3">
-                  Ditemukan aset di sistem lama (ZeroDev/EOA). Silakan recover ke dompet utama.
-                  <br/><span className="font-mono opacity-70">{legacyAddress?.slice(0,6)}...{legacyAddress?.slice(-4)}</span>
-              </p>
-              <div className="space-y-2">
-                  {legacyTokens.map((t, i) => (
-                      <div key={i} className="flex justify-between items-center bg-white dark:bg-zinc-900 p-2 rounded-lg border border-red-100">
-                          <div className="text-xs font-bold">{t.symbol} <span className="font-normal text-zinc-500">({parseFloat(t.formattedBal).toFixed(4)})</span></div>
-                          <button onClick={() => handleLegacyRecover(t)} className="bg-red-600 hover:bg-red-700 text-white text-[10px] px-3 py-1.5 rounded-md font-bold transition-colors">
-                              Recover
-                          </button>
-                      </div>
-                  ))}
-              </div>
-          </div>
-      )}
-
-      {/* HEADER CARD (MAIN SYSTEM) */}
+      {/* HEADER CARD (Unified Vault) */}
       <div className="p-5 bg-zinc-900 text-white rounded-2xl shadow-lg relative overflow-hidden">
         <div className={`absolute top-4 right-4 text-[10px] px-2 py-1 rounded-full border font-medium flex items-center gap-1 ${isDeployed ? "bg-green-500/20 border-green-500 text-green-400" : "bg-orange-500/20 border-orange-500 text-orange-400"}`}>
            {isDeployed ? <Check className="w-3 h-3" /> : <Rocket className="w-3 h-3" />}
            {isDeployed ? "Active" : "Inactive"}
         </div>
         <div className="flex items-center gap-2 text-zinc-400 text-xs mb-1">
-            <Wallet className="w-3 h-3" /> Smart Vault (Coinbase/Safe)
+            <Wallet className="w-3 h-3" /> Smart Vault
         </div>
         <div className="flex items-center justify-between mb-4">
             <code className="text-sm truncate max-w-[180px] opacity-80">{vaultAddress || "Loading..."}</code>

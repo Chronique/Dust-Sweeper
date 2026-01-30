@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import Image from "next/image";
@@ -11,7 +10,7 @@ import { Wallet, Sun, Moon, Share2, Pin, Github } from "lucide-react";
 import { SimpleToast } from "~/components/ui/simple-toast";
 
 export function TopBar() {
-  const frameContext = useFrameContext();
+  const frameContext = useFrameContext(); // Butuh FrameProvider agar tidak error
   const [isDark, setIsDark] = useState(false);
   
   // State untuk Toast
@@ -35,7 +34,7 @@ export function TopBar() {
     }
   };
 
-  // 3. Logic Share (Ganti alert dengan Toast)
+  // 3. Logic Share
   const handleShare = async () => {
     try {
       if (navigator.share) {
@@ -46,13 +45,12 @@ export function TopBar() {
         });
       } else {
         await navigator.clipboard.writeText(window.location.href);
-        // 🔥 GANTI ALERT JADI TOAST
         setToastMsg("Link copied to clipboard! 📋");
       }
     } catch (e) { console.error(e); }
   };
 
-  // 4. Logic Profile Farcaster
+  // 4. Logic Profile Farcaster (Hanya jalan jika FrameProvider aktif)
   const handleProfileClick = () => {
     if (frameContext?.context && (frameContext.context as any)?.user?.fid) {
       sdk.actions.viewProfile({ fid: (frameContext.context as any).user.fid });
@@ -65,7 +63,6 @@ export function TopBar() {
 
   return (
     <>
-      {/* PASANG TOAST DISINI */}
       <SimpleToast message={toastMsg} onClose={() => setToastMsg(null)} />
 
       <div className="w-full mb-6 mt-2 flex items-center justify-between">
@@ -97,45 +94,37 @@ export function TopBar() {
         {/* --- KANAN: ACTION BUTTONS + PROFILE --- */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           
-          {/* Github */}
           <a 
             href="https://github.com/Chronique/Nyawit-nih-orang" 
             target="_blank" 
             rel="noopener noreferrer"
             className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-all"
-            title="Source Code"
           >
              <Github className="w-4 h-4" />
           </a>
 
-          {/* Pin App (Ganti Alert dengan Toast) */}
           <button 
             className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-blue-600 hover:bg-blue-50 transition-all hidden sm:block"
-            title="Pin App"
             onClick={() => setToastMsg("Add to Home Screen for faster access! 📱")} 
           >
              <Pin className="w-4 h-4" />
           </button>
 
-          {/* Share */}
           <button 
             onClick={handleShare}
             className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-green-600 hover:bg-green-50 transition-all"
-            title="Share"
           >
              <Share2 className="w-4 h-4" />
           </button>
 
-          {/* Theme Toggle */}
           <button 
             onClick={toggleTheme}
             className="p-2 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:text-yellow-600 hover:bg-yellow-50 dark:hover:text-yellow-400 transition-all mr-1"
-            title="Toggle Theme"
           >
              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
 
-          {/* Profile */}
+          {/* Profile Button */}
           <div>
             {userPfp ? (
               <button
@@ -158,7 +147,6 @@ export function TopBar() {
           </div>
 
         </div>
-
       </div>
     </>
   );

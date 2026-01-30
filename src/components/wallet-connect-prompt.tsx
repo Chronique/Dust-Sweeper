@@ -1,132 +1,38 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useConnect } from "wagmi";
-import { Wallet, Hexagon, NavArrowDown, NavArrowUp } from "iconoir-react";
+import { Wallet } from "iconoir-react";
 
 export const WalletConnectPrompt = () => {
-  // 🔥 FIX 1: Ambil variable 'error' dari useConnect
-  const { connectors, connect, error } = useConnect();
-  
-  const [showEvmList, setShowEvmList] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const { connect, connectors } = useConnect();
 
-  // Prevent hydration mismatch
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) return null;
-
-  // 1. Find Connector for Base Smart Wallet (usually Coinbase Wallet SDK)
-  const baseConnector = connectors.find(
-    (c) => c.id === 'coinbaseWalletSDK' || c.name.toLowerCase().includes('coinbase')
-  );
-
-  // 2. Filter remaining connectors (Metamask, Injected, etc)
-  const evmConnectors = connectors.filter(
-    (c) => c.id !== 'coinbaseWalletSDK' && !c.name.toLowerCase().includes('coinbase')
-  );
+  // Ambil connector pertama (biasanya Injected atau Coinbase)
+  const primaryConnector = connectors[0];
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[50vh] p-6 text-center animate-fade-in">
-       
-       {/* Header / Logo */}
-       <div className="mb-6 drop-shadow-xl">
-          <img 
-            src="/nyawit.png" 
-            alt="App Logo" 
-            className="w-20 h-20 rounded-2xl object-cover" 
-          />
-       </div>
-       
-       <div className="mb-8">
-         <h2 className="text-xl font-bold mb-2 text-zinc-800 dark:text-white">Nyawit Dust Sweeper</h2>
-         <p className="text-sm text-zinc-500 max-w-[250px] mx-auto leading-relaxed">
-           Connect your wallet to start sweeping dust tokens into valuable assets.
-         </p>
-       </div>
+    <div className="flex flex-col items-center justify-center py-12 px-4 text-center space-y-4 animate-in fade-in zoom-in duration-300">
+      <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mb-2">
+         <Wallet className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+      </div>
+      
+      <div className="space-y-1">
+        <h3 className="text-xl font-bold">Connect to Start</h3>
+        <p className="text-zinc-500 text-sm max-w-[250px] mx-auto">
+          Login with Base App or Farcaster to access your Smart Vault.
+        </p>
+      </div>
 
-       {/* BUTTONS CONTAINER */}
-       <div className="w-full max-w-xs space-y-3" id="tour-connect-wallet">
-
-        {/* DEBUG SECTION */}
-        <div className="flex flex-col gap-2 mb-4 p-2 bg-zinc-100 dark:bg-zinc-800 rounded text-left">
-          <p className="text-[10px] font-mono text-zinc-500">Debug Connectors ({connectors.length}):</p>
-          <div className="flex flex-wrap gap-2">
-            {connectors.map((connector) => (
-                <button
+      <div className="flex flex-col gap-2 w-full max-w-xs">
+          {connectors.map((connector) => (
+            <button
                 key={connector.uid}
                 onClick={() => connect({ connector })}
-                className="bg-zinc-300 dark:bg-zinc-700 hover:bg-zinc-400 text-[10px] py-1 px-2 rounded text-zinc-800 dark:text-zinc-200"
-                >
-                {connector.name}
-                </button>
-            ))}
-          </div>
-          {/* 🔥 FIX 2: Gunakan variable 'error' (huruf kecil) */}
-          {error && <div className="text-red-500 text-xs font-mono break-all bg-red-100 p-1 rounded mt-1">{error.message}</div>}
-        </div>
-         
-         {/* OPTION 1: BASE SMART WALLET (RECOMMENDED) */}
-         {baseConnector && (
-           <button 
-             onClick={() => connect({ connector: baseConnector })}
-             className="w-full flex items-center justify-between p-4 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all group active:scale-95"
-           >
-             <div className="flex items-center gap-3">
-               <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm">
-                  <Hexagon className="w-6 h-6" />
-               </div>
-               <div className="text-left">
-                 <div className="font-bold text-sm text-blue-900">Base Smart Wallet</div>
-                 <div className="text-[10px] text-blue-600 font-medium">Recommended</div>
-               </div>
-             </div>
-           </button>
-         )}
-
-         {/* OPTION 2: EVM WALLET (DROPDOWN) */}
-         <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 transition-all">
-            <button 
-              onClick={() => setShowEvmList(!showEvmList)}
-              className="w-full flex items-center justify-between p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg transition-all active:scale-95"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-zinc-100 dark:bg-zinc-800 rounded-lg flex items-center justify-center text-zinc-600 dark:text-zinc-400">
-                    <Wallet className="w-6 h-6" />
-                </div>
-                <div className="text-left">
-                  <div className="font-bold text-sm text-zinc-700 dark:text-zinc-200">EVM Wallet</div>
-                  <div className="text-[10px] text-zinc-400">Metamask, Rainbow, etc</div>
-                </div>
-              </div>
-              {showEvmList ? <NavArrowUp className="w-5 h-5 text-zinc-400" /> : <NavArrowDown className="w-5 h-5 text-zinc-400" />}
+                Connect {connector.name}
             </button>
-
-            {/* EXTENSION LIST (Visible if clicked) */}
-            {showEvmList && (
-              <div className="border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 p-2 space-y-1">
-                {evmConnectors.length > 0 ? (
-                  evmConnectors.map((connector) => (
-                    <button
-                      key={connector.uid}
-                      onClick={() => connect({ connector })}
-                      className="w-full p-3 text-sm font-medium rounded-lg hover:bg-white dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 flex items-center justify-center gap-2 border border-transparent hover:border-zinc-200 dark:hover:border-zinc-800 transition-all"
-                    >
-                      {connector.name}
-                    </button>
-                  ))
-                ) : (
-                  <div className="p-3 text-xs text-center text-zinc-400">
-                    No other wallets detected.
-                  </div>
-                )}
-              </div>
-            )}
-         </div>
-
-       </div>
+          ))}
+      </div>
     </div>
   );
 };

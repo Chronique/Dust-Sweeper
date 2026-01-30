@@ -1,73 +1,51 @@
-'use client'
+"use client";
 
+import { useEffect, useState, createContext, useContext } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
-import { createContext, useContext, useEffect, useState } from "react";
 
-interface SafeAreaInsets {
-  top: number;
-  bottom: number;
-  left: number;
-  right: number;
-}
+// [FIX] Ambil tipe Context secara otomatis dari SDK
+// Ini menghindari error "Namespace as Type"
+type FrameContext = Awaited<typeof sdk.context>;
 
-interface MiniAppClient {
-  platformType?: 'web' | 'mobile';
-  clientFid: number;
-  added: boolean;
-  safeAreaInsets?: SafeAreaInsets;
-  notificationDetails?: {
-    url: string;
-    token: string;
-  };
-}
-
-interface MiniAppContext {
-  user: {
-    fid: number;
-    username?: string;
-    displayName?: string;
-    pfpUrl?: string;
-  };
-  location?: Record<string, unknown>;
-  client: MiniAppClient;
-}
-
-type FrameContextType = {
-  context: MiniAppContext | Record<string, unknown> | null;
+interface FrameContextValue {
+  context: FrameContext | null;
   isInMiniApp: boolean;
-} | null;
+}
 
-const FrameContext = createContext<FrameContextType>(null);
+const FrameContext = createContext<FrameContextValue | undefined>(undefined);
 
-export const useFrameContext = () => useContext(FrameContext);
-
-export default function FrameProvider({ children }: { children: React.ReactNode }){
-  const [frameContext, setFrameContext] = useState<FrameContextType>(null);
+export function FrameProvider({ children }: { children: React.ReactNode }) {
+  const [context, setContext] = useState<FrameContext | null>(null);
+  const [isInMiniApp, setIsInMiniApp] = useState(false);
 
   useEffect(() => {
-    const init = async () => {
+    const load = async () => {
       try {
-        const context = await sdk.context;
+        const contextData = await sdk.context;
+        setContext(contextData);
+        
+        // Cek apakah running di MiniApp
+        const isMiniApp = await sdk.isInMiniApp();
+        setIsInMiniApp(isMiniApp);
+        
         sdk.actions.ready();
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        const isInMiniApp = await sdk.isInMiniApp();
-        setFrameContext({ context, isInMiniApp });
-        
-      } catch {
-        setFrameContext({ 
-          context: { error: 'Failed to initialize' }, 
-          isInMiniApp: false 
-        });
+      } catch (e) {
+        console.error("Failed to load Farcaster Context:", e);
       }
-    }
-    
-    init();
-  }, [])
+    };
 
-  return(
-    <FrameContext.Provider value={frameContext}>
+    if (sdk) {
+      load();
+    }
+  }, []);
+
+  return (
+    <FrameContext.Provider value={{ context, isInMiniApp }}>
       {children}
     </FrameContext.Provider>
   );
+}
+
+export function useFrameContext() {
+  return useContext(FrameContext);
 }
