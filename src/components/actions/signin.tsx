@@ -1,110 +1,66 @@
 "use client";
 
-import { useState, useCallback } from "react";
-
+import { useEffect, useState } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
-import { SignInResult } from "@farcaster/miniapp-core/dist/actions/SignIn";
-import { createAppClient, generateNonce, viemConnector } from "@farcaster/auth-client";
 import { Button } from "~/components/ui/button";
 
-export function SignInAction() {
-  const [signingIn, setSigningIn] = useState<boolean>(false);
-  const [signInResult, setSignInResult] = useState<SignInResult | undefined>(undefined);
-  const [signInFailure, setSignInFailure] = useState<string | undefined>(undefined);
-  const [verifyResponse, setVerifyResponse] = useState<unknown>(undefined);
-  const [verifyParams, setVerifyParams] = useState<unknown>(undefined);
+export default function SignIn() {
+  const [context, setContext] = useState<Awaited<typeof sdk.context> | null>(null);
 
-
-  const getNonce = useCallback(async (): Promise<string> => {
-    // const nonce = await getCsrfToken();
-    const nonce = await generateNonce();
-    if (!nonce) throw new Error("Unable to generate nonce");
-    return nonce;
+  useEffect(() => {
+    const loadContext = async () => {
+      try {
+        const ctx = await sdk.context;
+        setContext(ctx);
+      } catch (e) {
+        console.error("Failed to load context:", e);
+      }
+    };
+    loadContext();
   }, []);
 
-  const handleSignIn = useCallback(async (): Promise<void> => {
-    try {
-      setSigningIn(true);
-      // Reset all existing state
-      setSignInResult(undefined);
-      setSignInFailure(undefined);
-      setVerifyResponse(undefined);
-      setVerifyParams(undefined);
-      const nonce = await getNonce();
-      const result = await sdk.actions.signIn({ nonce });
-      setSignInResult(result);
+  if (context?.user) {
+    return (
+      <div className="flex flex-col items-center justify-center p-6 space-y-4 animate-in fade-in zoom-in duration-300">
+        <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-green-500 shadow-lg shadow-green-500/20">
+          {context.user.pfpUrl ? (
+            <img 
+              src={context.user.pfpUrl} 
+              alt={context.user.username} 
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full bg-zinc-200 dark:bg-zinc-800" />
+          )}
+        </div>
+        
+        <div className="text-center space-y-1">
+          <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
+            Welcome, @{context.user.username}!
+          </h3>
+          <p className="text-xs text-zinc-500 font-mono bg-zinc-100 dark:bg-zinc-900 px-2 py-1 rounded-md">
+            FID: {context.user.fid}
+          </p>
+        </div>
 
-      // Verify the sign-in message
-      const appClient = createAppClient({
-        ethereum: viemConnector(),
-      });
-
-      const verifyRequestParams = {
-        message: result.message,
-        signature: result.signature as `0x${string}`,
-        domain: new URL(window.location.origin).hostname,
-        nonce: nonce,
-        acceptAuthAddress: true
-      };
-      
-      // Store params for debugging
-      setVerifyParams(verifyRequestParams);
-
-      const verifyResult = await appClient.verifySignInMessage(verifyRequestParams);
-      setVerifyResponse(verifyResult);
-
-
-    } catch (error) {
-      console.error("Sign in error:", error);
-      setSignInFailure(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setSigningIn(false);
-    }
-  }, [getNonce]);
-
-
+        <Button 
+          onClick={() => sdk.actions.close()} 
+          variant="outline"
+          className="w-full"
+        >
+          Close MiniApp
+        </Button>
+      </div>
+    );
+  }
 
   return (
-    <div className="mb-4">
-      <div className="p-3 bg-muted border border-border rounded-lg my-2">
-        <pre className="font-mono text-xs text-primary font-medium">sdk.actions.signIn</pre>
+    <div className="flex flex-col items-center justify-center p-8 text-center space-y-4">
+      <div className="animate-pulse">
+        <div className="h-12 w-12 bg-zinc-200 dark:bg-zinc-800 rounded-full mx-auto mb-4" />
+        <div className="h-4 w-32 bg-zinc-200 dark:bg-zinc-800 rounded mx-auto" />
       </div>
-      <Button onClick={handleSignIn} disabled={signingIn}>
-        {signingIn ? "Signing In..." : "Sign In with Farcaster"}
-      </Button>
-      {signInFailure && !signingIn && (
-        <div className="my-2 p-3 text-xs overflow-x-scroll bg-muted border border-border rounded-lg font-mono">
-          <div className="font-semibold text-muted-foreground mb-1">SIWF Error</div>
-          <div className="whitespace-pre text-destructive">{signInFailure}</div>
-        </div>
-      )}
-      {verifyParams !== undefined && !signingIn && (
-        <div className="my-2">
-
-          <div className="p-3 text-xs overflow-x-scroll bg-muted border border-border rounded-lg font-mono">
-            <div className="font-semibold text-muted-foreground mb-1">Verify Params</div>
-            <div className="whitespace-pre text-primary">{verifyParams ? JSON.stringify(verifyParams, null, 2) : 'No data'}</div>
-          </div>
-        </div>
-      )}
-      {verifyResponse !== undefined && !signingIn && (
-        <div className="my-2">
-
-          <div className="p-3 text-xs overflow-x-scroll bg-muted border border-border rounded-lg font-mono">
-            <div className="font-semibold text-muted-foreground mb-1">Verify Response</div>
-            <div className="whitespace-pre text-primary">{verifyResponse ? JSON.stringify(verifyResponse, null, 2) : 'No data'}</div>
-          </div>
-        </div>
-      )}
-      {signInResult && !signingIn && (
-        <div className="my-2">
-
-          <div className="p-3 text-xs overflow-x-scroll bg-muted border border-border rounded-lg font-mono">
-            <div className="font-semibold text-muted-foreground mb-1">SIWF Result</div>
-            <div className="whitespace-pre text-primary">{JSON.stringify(signInResult, null, 2)}</div>
-          </div>
-        </div>
-      )}
+      <p className="text-sm text-zinc-500">Loading Farcaster Profile...</p>
     </div>
   );
-} 
+}

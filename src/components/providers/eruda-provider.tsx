@@ -1,43 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-export default function ErudaProvider() {
+export function ErudaProvider({ children }: { children: React.ReactNode }) {
+  const [isMounted, setIsMounted] = useState(false);
+
   useEffect(() => {
-    import("eruda").then((eruda) => {
-      if (!window.eruda) {
-        window.eruda = eruda.default;
-        const erudaInstance = eruda.default as {
-          init: (config?: { 
-            defaults?: { 
-              displaySize?: number; 
-              transparency?: number;
-            };
-            tool?: string[];
-          }) => void;
-          position: (config: { x: number; y: number }) => void;
-        };
-        erudaInstance.init({
-          defaults: {
-            displaySize: 50,
-            transparency: 0.8,
-          },
-        });
-        
-        setTimeout(() => {
-          erudaInstance.position({ x: window.innerWidth - 60, y: window.innerHeight - 60 });
-        }, 100);
-        
-        console.log("Eruda initialized for debugging");
-      }
-    });
+    setIsMounted(true);
+    // Hanya load Eruda di environment development agar tidak muncul di production
+    if (process.env.NODE_ENV === "development") {
+      import("eruda").then((eruda) => eruda.default.init());
+    }
   }, []);
 
-  return null;
-}
+  if (!isMounted) return null;
 
-declare global {
-  interface Window {
-    eruda?: unknown;
-  }
+  return <>{children}</>;
 }

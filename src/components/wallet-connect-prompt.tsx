@@ -9,17 +9,25 @@ export const WalletConnectPrompt = () => {
   const { login, ready, authenticated } = usePrivy();
   const frameContext = useFrameContext();
 
-  // --- LOGIC AUTO CONNECT ---
+  // 1. Logic Login Spesifik (Prioritas Farcaster)
+  const handleLogin = () => {
+    // Jika di dalam MiniApp, paksa login Farcaster
+    if (frameContext?.isInMiniApp) {
+      login({ loginMethods: ['farcaster'] });
+    } else {
+      // Jika di browser biasa, tawarkan Farcaster dan Wallet
+      login({ loginMethods: ['farcaster', 'wallet', 'email'] });
+    }
+  };
+
+  // 2. Logic Auto Connect (Otomatis jalan saat komponen dimuat di Farcaster)
   useEffect(() => {
-    // Jika Privy siap, belum login, DAN kita ada di dalam Farcaster App
     if (ready && !authenticated && frameContext?.isInMiniApp) {
         console.log("🚀 Auto-login Farcaster detected...");
-        // Langsung trigger login method farcaster
         login({ loginMethods: ['farcaster'] });
     }
-  }, [ready, authenticated, frameContext]);
+  }, [ready, authenticated, frameContext, login]);
 
-  // Jika sedang loading sistem auth
   if (!ready) return (
     <div className="flex flex-col items-center justify-center py-20 text-zinc-500 animate-pulse gap-2">
        <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"/>
@@ -40,8 +48,9 @@ export const WalletConnectPrompt = () => {
         </p>
       </div>
 
+      {/* [FIX] Gunakan handleLogin yang sudah kita buat di atas */}
       <button
-        onClick={login}
+        onClick={handleLogin}
         className="mt-4 px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 transition-all active:scale-95 flex items-center gap-2"
       >
         Login / Connect
