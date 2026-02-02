@@ -23,13 +23,14 @@ export const WagmiProvider = ({ children }: { children: React.ReactNode }) => {
         appearance: {
           theme: "dark",
           accentColor: "#676FFF",
-          showWalletLoginFirst: false, // Kita mau Email, jadi wallet list false dulu
+          // [FIX] Tampilkan opsi wallet paling depan
+          showWalletLoginFirst: true, 
         },
         embeddedWallets: {
-          createOnLogin: "users-without-wallets", // INI KUNCINYA: Bikin wallet otomatis saat login email
+          createOnLogin: "users-without-wallets", 
         },
-        // [FIX] Kita set HANYA 'email' sesuai request Mas
-        loginMethods: ["email"], 
+        // [FIX] Izinkan 'wallet' dan 'email'. Hapus 'farcaster' biar gak bentrok.
+        loginMethods: ["wallet", "email"], 
       }}
     >
       <QueryClientProvider client={queryClient}>
