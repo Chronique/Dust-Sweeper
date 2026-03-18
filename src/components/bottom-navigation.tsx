@@ -13,7 +13,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 dark:bg-black/90 backdrop-blur-lg border-t border-zinc-200 dark:border-zinc-800 pb-[env(safe-area-inset-bottom)]">
       <div className="flex justify-around items-center h-20 max-w-lg mx-auto px-2">
 
-        {/* 1. BLUSUKAN (Deposit) */}
+        {/* 1. SCAN */}
         <button
           id="tour-nav-deposit"
           onClick={() => onTabChange("deposit")}
@@ -31,11 +31,11 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
           <span className={`text-[10px] font-bold tracking-tight transition-all ${
             activeTab === "deposit" ? "opacity-100" : "opacity-70"
           }`}>
-            Blusukan
+            Scan
           </span>
         </button>
 
-        {/* 2. BAKAR WILAYAH (Swap) */}
+        {/* 2. SWEEP */}
         <button
           id="tour-nav-swap"
           onClick={() => onTabChange("swap")}
@@ -53,11 +53,11 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
           <span className={`text-[10px] font-bold tracking-tight transition-all ${
             activeTab === "swap" ? "opacity-100" : "opacity-70"
           }`}>
-            Bakar Wilayah
+            Sweep
           </span>
         </button>
 
-        {/* 3. TANAM (Morpho Yield) */}
+        {/* 3. EARN */}
         <button
           id="tour-nav-tanam"
           onClick={() => onTabChange("tanam")}
@@ -75,11 +75,11 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
           <span className={`text-[10px] font-bold tracking-tight transition-all ${
             activeTab === "tanam" ? "opacity-100" : "opacity-70"
           }`}>
-            Tanam
+            Earn
           </span>
         </button>
 
-        {/* 4. PANEN (Vault) */}
+        {/* 4. VAULT */}
         <button
           id="tour-nav-vault"
           onClick={() => onTabChange("vault")}
@@ -97,7 +97,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
           <span className={`text-[10px] font-bold tracking-tight transition-all ${
             activeTab === "vault" ? "opacity-100" : "opacity-70"
           }`}>
-            Panen
+            Vault
           </span>
         </button>
 

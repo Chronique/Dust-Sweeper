@@ -23,6 +23,8 @@
     "@rhinestone/module-sdk": "^0.4.0",
     "@tanstack/react-query": "^5.66.0",
     "@worldcoin/mini-apps-ui-kit-react": "^1.6.0",
+    "@yo-protocol/core": "^1.0.9",
+    "@yo-protocol/react": "^1.0.6",
     "@zerodev/ecdsa-validator": "^5.4.9",
     "@zerodev/sdk": "^5.5.7",
     "alchemy-sdk": "^2.12.0",
@@ -45,7 +47,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "valtio": "^1.11.2",
-    "viem": "^2.46.2",
+    "viem": "^2.47.5",
     "wagmi": "^2.14.9"
   },
   "devDependencies": {
