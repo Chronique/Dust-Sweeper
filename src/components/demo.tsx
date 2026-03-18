@@ -17,11 +17,13 @@ import { BottomNavigation } from "~/components/bottom-navigation";
 import { TabType } from "~/types";
 
 import { ArrowUpRight } from "lucide-react";
+import { useProductTour } from "~/hooks/use-product-tour";
 
 export default function Demo() {
   const frameContext = useFrameContext();
   const { isConnected } = useAccount();
   const [activeTab, setActiveTab] = useState<TabType>("deposit");
+  const { runTour } = useProductTour(); // auto-runs on first visit
 
   const safeAreaTop =
     (frameContext?.context as any)?.client?.safeAreaInsets?.top ?? 0;
@@ -35,7 +37,7 @@ export default function Demo() {
 
         {/* HEADER */}
         <div className="sticky top-0 z-20 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md px-4 py-3 border-b border-zinc-100 dark:border-zinc-800/50">
-          <TopBar />
+          <TopBar onHelpClick={runTour} />
         </div>
 
         <main className="flex-1 px-4 py-6 pb-28 space-y-6">
