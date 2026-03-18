@@ -572,7 +572,7 @@ export const TanamView = () => {
         <a href="https://app.yo.xyz" target="_blank" rel="noopener noreferrer" className="text-zinc-600 hover:text-zinc-400 underline normal-case font-normal text-[10px]">yo.xyz ↗</a>
       </div>
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {YO_VAULTS.map(v => {
           const apy           = yoApyMap[v.id];
           const underlyingBal = yoUnderlyingBal[v.id] ?? 0n;
@@ -674,7 +674,7 @@ export const TanamView = () => {
       {/* ══════════════════════════════════════════════════════════════════════ */}
       <div className="text-xs font-bold text-zinc-400 uppercase tracking-widest px-1 pt-2">Morpho Blue Vaults</div>
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {MORPHO_VAULTS.map(vault => {
           const c       = morphoColors[vault.color as keyof typeof morphoColors];
           const apy     = morphoApyData.find(a => a.vaultId === vault.id);

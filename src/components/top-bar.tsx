@@ -33,7 +33,7 @@ export function TopBar({ onHelpClick }: TopBarProps) {
 
   const handleShare = async () => {
     const appUrl = "https://nyawit-nih-orang.vercel.app";
-    const castText = `🌾 Nyawit — Sweep dust tokens into yield on Base!\n\nTurn worthless small-balance tokens into USDC savings via YO Protocol.`;
+    const castText = `🌾 Nyawit — Turn dust tokens into yield on Base!\n\nSweep → Save to YO Protocol (yoUSD / yoETH / yoBTC / yoEUR) or Morpho.\n\nWorks on mobile & desktop 🖥️`;
     try {
       await sdk.actions.composeCast({
         text: castText,
