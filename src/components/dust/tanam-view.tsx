@@ -15,6 +15,7 @@ import { SimpleToast } from "~/components/ui/simple-toast";
 import { fetchMoralisTokens } from "~/lib/moralis-data";
 import { useAppDialog } from "~/components/ui/app-dialog";
 import { createYoClient } from "@yo-protocol/core";
+import { sdk } from "@farcaster/miniapp-sdk";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const WETH_ADDRESS = "0x4200000000000000000000000000000000000006" as Address;
@@ -126,6 +127,22 @@ async function getWethToUsdcQuote(wethAmount: bigint, vaultAddress: string, chai
   const data = await res.json();
   if (data.error || !data.transaction?.data) throw new Error(data.error || "No route found");
   return data;
+}
+
+// ── Farcaster share after YO deposit ──────────────────────────────────────────
+async function shareSavedToYo(usdcAmount: string, apy: number | null) {
+  const apyText = apy != null ? ` at ${apy.toFixed(2)}% APY` : "";
+  const text = `Just turned dust tokens into $${usdcAmount} USDC savings${apyText} using Nyawit × YO Protocol on Base 🐷
+
+Sweep your dust → earn yield`;
+  try {
+    await sdk.actions.composeCast({
+      text,
+      embeds: ["https://nyawit-nih-orang.vercel.app"],
+    });
+  } catch {
+    // Not in Farcaster context — silently skip
+  }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -442,6 +459,7 @@ export const TanamView = () => {
       await client.waitForUserOperationReceipt({ hash: depositTx });
 
       setToast({ msg: `✓ Swapped WETH and saved $${usdcDisplay} USDC to YO!`, type: "success" });
+      shareSavedToYo(usdcDisplay, yoApy);
       await new Promise(r => setTimeout(r, 3000));
       await fetchPositions();
     } catch (e: any) {
@@ -472,6 +490,7 @@ export const TanamView = () => {
       const depositTx = await client.sendUserOperation({ calls: [{ to: YO_USD_VAULT, value: 0n, data: depositData }] });
       await client.waitForUserOperationReceipt({ hash: depositTx });
       setToast({ msg: `✓ $${usdcDisplay} USDC saved to YO Protocol!`, type: "success" });
+      shareSavedToYo(usdcDisplay, yoApy);
       await new Promise(r => setTimeout(r, 3000));
       await fetchPositions();
     } catch (e: any) {

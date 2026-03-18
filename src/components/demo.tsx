@@ -74,7 +74,7 @@ export default function Demo() {
                 {activeTab === "deposit" && (
                   <>
                     <h2 className="text-2xl font-bold bg-gradient-to-br from-zinc-900 to-zinc-600 bg-clip-text text-transparent dark:from-white dark:to-zinc-400">
-                      Scan & Deposit
+                      Scan Wallet
                     </h2>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">
                       Scan your wallet and move dust tokens into your Smart Vault.
@@ -85,10 +85,10 @@ export default function Demo() {
                 {activeTab === "swap" && (
                   <>
                     <h2 className="text-2xl font-bold text-orange-600">
-                      Burn Dust
+                      Sweep Dust
                     </h2>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                      Batch swap all dust tokens into ETH in one action.
+                      Batch swap all dust tokens into WETH in one transaction.
                     </p>
                   </>
                 )}
@@ -99,7 +99,7 @@ export default function Demo() {
                       Earn Yield
                     </h2>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                      Deposit USDC or WETH into Morpho and earn yield automatically.
+                      Deposit USDC into YO Protocol or WETH into Morpho and earn yield automatically.
                     </p>
                   </>
                 )}
@@ -119,7 +119,7 @@ export default function Demo() {
               {/* TAB CONTENT */}
               <div className="relative">
                 {activeTab === "deposit" && <DustDepositView />}
-                {activeTab === "swap" && <SwapView />}
+                {activeTab === "swap" && <SwapView onTabChange={setActiveTab} />}
                 {activeTab === "tanam" && <TanamView />}
                 {activeTab === "vault" && <VaultView />}
               </div>
