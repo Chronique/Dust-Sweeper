@@ -31,7 +31,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
           <span className={`text-[10px] font-bold tracking-tight transition-all ${
             activeTab === "deposit" ? "opacity-100" : "opacity-70"
           }`}>
-            Scan
+            Blusukan
           </span>
         </button>
 
@@ -53,7 +53,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
           <span className={`text-[10px] font-bold tracking-tight transition-all ${
             activeTab === "swap" ? "opacity-100" : "opacity-70"
           }`}>
-            Sweep
+            Bakar Wilayah
           </span>
         </button>
 
@@ -75,7 +75,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
           <span className={`text-[10px] font-bold tracking-tight transition-all ${
             activeTab === "tanam" ? "opacity-100" : "opacity-70"
           }`}>
-            Earn
+            Tanam
           </span>
         </button>
 
@@ -97,7 +97,7 @@ export const BottomNavigation = ({ activeTab, onTabChange }: BottomNavigationPro
           <span className={`text-[10px] font-bold tracking-tight transition-all ${
             activeTab === "vault" ? "opacity-100" : "opacity-70"
           }`}>
-            Vault
+            Panen
           </span>
         </button>
 
