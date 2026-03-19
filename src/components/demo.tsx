@@ -37,7 +37,7 @@ export default function Demo() {
   const frameContext = useFrameContext();
   const { isConnected } = useAccount();
   const [activeTab, setActiveTab] = useState<TabType>("deposit");
-  const { runTour } = useProductTour();
+  const { runTour } = useProductTour(isConnected); // only auto-runs after wallet connected
 
   const safeAreaTop = (frameContext?.context as any)?.client?.safeAreaInsets?.top ?? 0;
   const header      = TAB_HEADERS[activeTab];
@@ -132,6 +132,7 @@ export default function Demo() {
                   return (
                     <button
                       key={tab}
+                      id={`tour-desktop-${tab}`}
                       onClick={() => setActiveTab(tab)}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
                         isActive
