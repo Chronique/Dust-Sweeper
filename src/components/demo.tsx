@@ -19,18 +19,18 @@ import { Map, Flame, Sprout, Wheat, ArrowUpRight } from "lucide-react";
 
 // ── Desktop sidebar nav items ─────────────────────────────────────────────────
 const NAV_ITEMS: { tab: TabType; label: string; Icon: any; color: string; activeColor: string; activeBg: string }[] = [
-  { tab: "deposit", label: "Scan",   Icon: Map,    color: "text-zinc-400", activeColor: "text-zinc-900 dark:text-white",  activeBg: "bg-zinc-100 dark:bg-zinc-800" },
-  { tab: "swap",    label: "Sweep",  Icon: Flame,  color: "text-zinc-400", activeColor: "text-orange-600",                activeBg: "bg-orange-50 dark:bg-orange-900/20" },
-  { tab: "tanam",   label: "Earn",   Icon: Sprout, color: "text-zinc-400", activeColor: "text-green-600",                 activeBg: "bg-green-50 dark:bg-green-900/20" },
-  { tab: "vault",   label: "Vault",  Icon: Wheat,  color: "text-zinc-400", activeColor: "text-yellow-600",                activeBg: "bg-yellow-50 dark:bg-yellow-900/20" },
+  { tab: "deposit", label: "Blusukan",   Icon: Map,    color: "text-zinc-400", activeColor: "text-zinc-900 dark:text-white",  activeBg: "bg-zinc-100 dark:bg-zinc-800" },
+  { tab: "swap",    label: "Bakar Wilayah",  Icon: Flame,  color: "text-zinc-400", activeColor: "text-orange-600",                activeBg: "bg-orange-50 dark:bg-orange-900/20" },
+  { tab: "tanam",   label: "Tanam",   Icon: Sprout, color: "text-zinc-400", activeColor: "text-green-600",                 activeBg: "bg-green-50 dark:bg-green-900/20" },
+  { tab: "vault",   label: "Panen",  Icon: Wheat,  color: "text-zinc-400", activeColor: "text-yellow-600",                activeBg: "bg-yellow-50 dark:bg-yellow-900/20" },
 ];
 
 // Tab header copy
 const TAB_HEADERS: Record<TabType, { title: string; subtitle: string; titleClass: string }> = {
-  deposit: { title: "Scan Wallet",  subtitle: "Scan your wallet and move dust tokens into your Smart Vault.", titleClass: "bg-gradient-to-br from-zinc-900 to-zinc-600 bg-clip-text text-transparent dark:from-white dark:to-zinc-400" },
-  swap:    { title: "Sweep Dust",   subtitle: "Batch swap all dust tokens into WETH in one transaction.", titleClass: "text-orange-600" },
-  tanam:   { title: "Earn Yield",   subtitle: "Save to YO Protocol (yoUSD/yoETH/yoBTC/yoEUR) or Morpho Blue.", titleClass: "text-green-600" },
-  vault:   { title: "Vault",        subtitle: "Manage and withdraw assets from your Smart Vault.", titleClass: "text-yellow-600" },
+  deposit: { title: "Blusukan",  subtitle: "Scan wallet kamu dan pindahkan dust token ke Smart Vault.", titleClass: "bg-gradient-to-br from-zinc-900 to-zinc-600 bg-clip-text text-transparent dark:from-white dark:to-zinc-400" },
+  swap:    { title: "Bakar Wilayah",   subtitle: "Bakar semua dust token jadi WETH dalam satu transaksi.", titleClass: "text-orange-600" },
+  tanam:   { title: "Tanam",   subtitle: "Tanam USDC/WETH/cbBTC ke YO Protocol atau Morpho Blue, panen yield otomatis.", titleClass: "text-green-600" },
+  vault:   { title: "Panen",        subtitle: "Kelola dan tarik aset dari Smart Vault kamu.", titleClass: "text-yellow-600" },
 };
 
 export default function Demo() {
