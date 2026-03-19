@@ -27,10 +27,10 @@ const NAV_ITEMS: { tab: TabType; label: string; Icon: any; color: string; active
 
 // Tab header copy
 const TAB_HEADERS: Record<TabType, { title: string; subtitle: string; titleClass: string }> = {
-  deposit: { title: "Blusukan",  subtitle: "Scan wallet kamu dan pindahkan dust token ke Smart Vault.", titleClass: "bg-gradient-to-br from-zinc-900 to-zinc-600 bg-clip-text text-transparent dark:from-white dark:to-zinc-400" },
-  swap:    { title: "Bakar Wilayah",   subtitle: "Bakar semua dust token jadi WETH dalam satu transaksi.", titleClass: "text-orange-600" },
-  tanam:   { title: "Tanam",   subtitle: "Tanam USDC/WETH/cbBTC ke YO Protocol atau Morpho Blue, panen yield otomatis.", titleClass: "text-green-600" },
-  vault:   { title: "Panen",        subtitle: "Kelola dan tarik aset dari Smart Vault kamu.", titleClass: "text-yellow-600" },
+  deposit: { title: "Blusukan",  subtitle: "Scan your wallet and transfer your dust tokens to Smart Vault.", titleClass: "bg-gradient-to-br from-zinc-900 to-zinc-600 bg-clip-text text-transparent dark:from-white dark:to-zinc-400" },
+  swap:    { title: "Bakar Wilayah",   subtitle: "Burn all dust tokens to WETH in a single transaction.", titleClass: "text-orange-600" },
+  tanam:   { title: "Tanam",   subtitle: "Tanam USDC/WETH/cbBTC to YO Protocol or Morpho Blue, automatic yield harvesting.", titleClass: "text-green-600" },
+  vault:   { title: "Panen",        subtitle: "Manage and withdraw assets from your Smart Vault.", titleClass: "text-yellow-600" },
 };
 
 export default function Demo() {
