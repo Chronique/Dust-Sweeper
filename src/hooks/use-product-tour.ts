@@ -26,19 +26,19 @@ function buildSteps() {
       welcome,
       {
         element: "#tour-desktop-deposit",
-        popover: { title: "1. Blusukan", description: "Scan dompet kamu, temukan dust token, lalu kirim ke Smart Vault.", side: "right" as const, align: "center" as const },
+        popover: { title: "1. Blusukan", description: "Scan your wallet for small token balances, then send them to your Smart Vault.", side: "right" as const, align: "center" as const },
       },
       {
         element: "#tour-desktop-swap",
-        popover: { title: "2. Bakar Wilayah", description: "Bakar hingga 5 dust token jadi WETH sekaligus — satu transaksi via LI.FI.", side: "right" as const, align: "center" as const },
+        popover: { title: "2. Bakar Wilayah", description: "Batch swap up to 5 dust tokens into WETH in one transaction — powered by LI.FI.", side: "right" as const, align: "center" as const },
       },
       {
         element: "#tour-desktop-tanam",
-        popover: { title: "3. Tanam", description: "Simpan ke YO Protocol (yoUSD/yoETH/yoBTC/yoEUR) atau Morpho Blue — bandingkan APY langsung.", side: "right" as const, align: "center" as const },
+        popover: { title: "3. Tanam", description: "Deposit into YO Protocol (yoUSD/yoETH/yoBTC/yoEUR) or Morpho Blue. Compare live APYs and pick the best rate.", side: "right" as const, align: "center" as const },
       },
       {
         element: "#tour-desktop-vault",
-        popover: { title: "4. Panen", description: "Lihat semua posisi & saldo Smart Vault kamu. Tarik kapan saja.", side: "right" as const, align: "center" as const },
+        popover: { title: "4. Panen", description: "View all your positions and Smart Vault balance. Withdraw anytime.", side: "right" as const, align: "center" as const },
       },
     ];
   }
@@ -47,19 +47,19 @@ function buildSteps() {
     welcome,
     {
       element: "#tour-nav-deposit",
-      popover: { title: "1. Blusukan", description: "Scan dompet kamu, temukan dust token, lalu kirim ke Smart Vault.", side: "top" as const, align: "center" as const },
+      popover: { title: "1. Blusukan", description: "Scan your wallet for small token balances, then send them to your Smart Vault.", side: "top" as const, align: "center" as const },
     },
     {
       element: "#tour-nav-swap",
-      popover: { title: "2. Bakar Wilayah", description: "Bakar hingga 5 dust token jadi WETH sekaligus — satu transaksi via LI.FI.", side: "top" as const, align: "center" as const },
+      popover: { title: "2. Bakar Wilayah", description: "Batch swap up to 5 dust tokens into WETH in one transaction — powered by LI.FI.", side: "top" as const, align: "center" as const },
     },
     {
       element: "#tour-nav-tanam",
-      popover: { title: "3. Tanam", description: "Simpan ke YO Protocol atau Morpho Blue — bandingkan APY langsung.", side: "top" as const, align: "center" as const },
+      popover: { title: "3. Tanam", description: "Deposit into YO Protocol or Morpho Blue. Compare live APYs and pick the best rate.", side: "top" as const, align: "center" as const },
     },
     {
       element: "#tour-nav-vault",
-      popover: { title: "4. Panen", description: "Lihat semua posisi & saldo Smart Vault kamu. Tarik kapan saja.", side: "top" as const, align: "center" as const },
+      popover: { title: "4. Panen", description: "View all your positions and Smart Vault balance. Withdraw anytime.", side: "top" as const, align: "center" as const },
     },
   ];
 }
